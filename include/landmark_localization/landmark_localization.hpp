@@ -24,10 +24,9 @@ private:
   void publish_inliers(const std::vector<Point3D> &inliers);
   void publish_plane_marker(const std::array<float, 4> &plane_coefficients, const std::array<double, 3> &centroid);
   void publish_robot_markers(const std::array<double, 3> &robot_position, double robot_yaw);
-
   std::array<double, 3> calculate_centroid(const std::vector<Point3D> &points);
   void translate_points(std::vector<Point3D> &points, const std::array<double, 3> &centroid);
-
+  bool check_plane_size(const std::vector<Point3D> &plane_inliers, const std::vector<Point3D> &rotated_inliers);
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_;
 
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr downsampled_publisher_;

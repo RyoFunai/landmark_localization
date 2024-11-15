@@ -33,21 +33,27 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
 
   // RANSAC を実行して平面を推定
   std::array<float, 4> plane_coefficients;
-  std::vector<Point3D> inliers;
-  if (perform_ransac(downsampled_points, plane_coefficients, inliers))
+  std::vector<Point3D> plane_inliers;
+  if (perform_ransac(downsampled_points, plane_coefficients, plane_inliers))
   {
-    for (auto &pt : inliers)
+////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////
+    std::vector<Point3D> inliers_2d = plane_inliers;
+
+    for (auto &pt : inliers_2d)
     {
       pt.z = 0.0;
     }
 
     // Yaw角の推定をRANSACで行う
     double angle = 0.0;
-    if (perform_line_ransac(inliers, angle))
+    if (perform_line_ransac(inliers_2d, angle))
     {
       angle = normalize_angle(arrange_angle(angle));
-      std::vector<Point3D> rotated_inliers = rotate_points(inliers, angle);
-
+      std::vector<Point3D> rotated_inliers = rotate_points(inliers_2d, angle);
+      if (!check_plane_size(plane_inliers, rotated_inliers))
+        return;
       // インライア点群の重心を計算
       std::array<double, 3> centroid = calculate_centroid(rotated_inliers);
 
@@ -55,19 +61,66 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
       translate_points(rotated_inliers, centroid);
 
       // ロボットの相対的な位置を計算（重心の逆）
-      std::array<double, 3> robot_position = { -centroid[0], -centroid[1], -centroid[2] };
-      double robot_yaw = angle;
-
-      publish_robot_markers(robot_position, robot_yaw);
+      std::array<double, 3> robot_position = {-centroid[0], -centroid[1], -centroid[2]};
+      publish_robot_markers(robot_position, angle);
       publish_plane_marker(plane_coefficients, centroid);
 
-      publish_inliers(rotated_inliers);
+      publish_inliers(plane_inliers);
     }
     else
     {
       RCLCPP_WARN(this->get_logger(), "Yaw角の推定に失敗しました。");
     }
   }
+}
+
+bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_inliers, const std::vector<Point3D> &rotated_inliers)
+{
+  // 平面のサイズを計算
+  double min_z = 100;
+  double max_z = -100;
+  double min_y = 100;
+  double max_y = -100;
+
+  for (const auto &pt : plane_inliers)
+  {
+    if (pt.z < min_z)
+      min_z = pt.z;
+    if (pt.z > max_z)
+      max_z = pt.z;
+  }
+  for (const auto &pt : rotated_inliers)
+  {
+    if (pt.y < min_y)
+      min_y = pt.y;
+    if (pt.y > max_y)
+      max_y = pt.y;
+  }
+
+  double width = max_y - min_y;  // 横幅
+  double height = max_z - min_z; // 縦幅
+
+  // 期待するサイズ
+  const double expected_width = 0.91;
+  const double expected_height = 0.6;
+  const double tolerance = 0.3; // ±10%
+
+  // サイズの許容範囲
+  double min_width = expected_width * (1.0 - tolerance);
+  double max_width = expected_width * (1.0 + tolerance);
+  double min_height = expected_height * (1.0 - tolerance);
+  double max_height = expected_height * (1.0 + tolerance);
+
+  // サイズチェック
+  if (width < min_width || width > max_width || height < min_height || height > max_height)
+  {
+    RCLCPP_INFO(this->get_logger(), "max_z: %f, min_z: %f", max_z, min_z);
+    RCLCPP_INFO(this->get_logger(), "max_y: %f, min_y: %f", max_y, min_y);
+    RCLCPP_ERROR(this->get_logger(), "width: %f, height: %f", width, height);
+    RCLCPP_WARN(this->get_logger(), "検出した面のサイズが規定範囲外です。スキップします。");
+    return false;
+  }
+  return true;
 }
 
 double LandmarkLocalization::arrange_angle(double &angle)
