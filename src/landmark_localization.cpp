@@ -29,13 +29,7 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
   std::vector<Point3D> processed_points = processor.process_pointcloud(*msg);
   std::vector<Point3D> downsampled_points = processor.get_downsampled_points();
 
-  RCLCPP_INFO(this->get_logger(), "Received pointcloud with %zu points", msg->width * msg->height);
-  RCLCPP_INFO(this->get_logger(), "Downsampled pointcloud with %zu points", downsampled_points.size());
-
-  // downsampled_points をパブリッシュ
-  sensor_msgs::msg::PointCloud2 downsampled_msg = processor.vector_to_PC2(downsampled_points);
-  downsampled_msg.header.frame_id = "map";
-  downsampled_publisher_->publish(downsampled_msg);
+  publish_downsampled_points(downsampled_points);
 
   // RANSAC を実行して平面を推定
   std::array<float, 4> plane_coefficients;
@@ -48,60 +42,58 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
     }
 
     // Yaw角の推定をRANSACで行う
-    double yaw_angle = 0.0;
-    if (perform_line_ransac(inliers, yaw_angle))
+    double angle = 0.0;
+    if (perform_line_ransac(inliers, angle))
     {
-      // インライア点群の重心を計算
-      double centroid_x = 0.0, centroid_y = 0.0, centroid_z = 0.0;
-      for (const auto &pt : inliers)
-      {
-        centroid_x += pt.x;
-        centroid_y += pt.y;
-      }
-      size_t inlier_size = inliers.size();
-      centroid_x /= inlier_size;
-      centroid_y /= inlier_size;
-      centroid_z = 0.0;
+      angle = normalize_angle(arrange_angle(angle));
+      std::vector<Point3D> rotated_inliers = rotate_points(inliers, angle);
 
-      std::array<double, 3> centroid = {centroid_x, centroid_y, centroid_z};
+      // インライア点群の重心を計算
+      std::array<double, 3> centroid = calculate_centroid(rotated_inliers);
 
       // インライア点群を重心で圧縮（原点に移動）
-      for (auto &pt : inliers)
-      {
-        pt.x -= centroid_x;
-        pt.y -= centroid_y;
-      }
+      translate_points(rotated_inliers, centroid);
 
       // ロボットの相対的な位置を計算（重心の逆）
-      double robot_rel_x = -centroid_x;
-      double robot_rel_y = -centroid_y;
-      double robot_rel_z = -centroid_z;
+      std::array<double, 3> robot_position = { -centroid[0], -centroid[1], -centroid[2] };
+      double robot_yaw = angle;
 
-      RCLCPP_INFO(this->get_logger(), "Robot relative position: x=%.2f, y=%.2f, z=%.2f", robot_rel_x, robot_rel_y, robot_rel_z);
-      RCLCPP_INFO(this->get_logger(), "推定されたYaw角: %.2f 度", (yaw_angle + M_PI / 2.0) * (180.0 / M_PI));
-      double robot_yaw = normalize_angle(yaw_angle + M_PI / 2.0);
-      if (robot_yaw > M_PI / 2.0)
-      {
-        robot_yaw -= M_PI;
-      }
-      // ロボットの位置と向きをマーカーとしてパブリッシュ
-      RCLCPP_INFO(this->get_logger(), "normalize推定されたYaw角: %.2f 度", robot_yaw * (180.0 / M_PI));
-      std::array<double, 3> robot_position = {robot_rel_x, robot_rel_y, robot_rel_z};
-      create_robot_marker(robot_position, robot_yaw);
+      publish_robot_markers(robot_position, robot_yaw);
+      publish_plane_marker(plane_coefficients, centroid);
 
-      // マーカーを作成してパブリッシュ
-      create_plane_marker(plane_coefficients, centroid);
-
-      // 圧縮後のインライア点群をパブリッシュ
-      sensor_msgs::msg::PointCloud2 inliers_msg = processor.vector_to_PC2(inliers);
-      inliers_msg.header.frame_id = "map";
-      inliers_publisher_->publish(inliers_msg);
+      publish_inliers(rotated_inliers);
     }
     else
     {
       RCLCPP_WARN(this->get_logger(), "Yaw角の推定に失敗しました。");
     }
   }
+}
+
+double LandmarkLocalization::arrange_angle(double &angle)
+{
+  if (angle < 0)
+    angle += M_PI / 2;
+  else
+    angle -= M_PI / 2;
+
+  return angle;
+}
+
+std::vector<Point3D> LandmarkLocalization::rotate_points(std::vector<Point3D> &points, double angle)
+{
+  std::vector<Point3D> rotated_points = points;
+  double cos_yaw = std::cos(-angle);
+  double sin_yaw = std::sin(-angle);
+
+  for (auto &pt : rotated_points)
+  {
+    double x_rot = pt.x * cos_yaw - pt.y * sin_yaw;
+    double y_rot = pt.x * sin_yaw + pt.y * cos_yaw;
+    pt.x = x_rot;
+    pt.y = y_rot;
+  }
+  return rotated_points;
 }
 
 double LandmarkLocalization::normalize_angle(double angle)
@@ -112,9 +104,10 @@ double LandmarkLocalization::normalize_angle(double angle)
     angle += 2.0 * M_PI;
   return angle;
 }
+
 bool LandmarkLocalization::perform_ransac(const std::vector<Point3D> &points, std::array<float, 4> &plane_coefficients, std::vector<Point3D> &inliers)
 {
-  if (points.size() < 3)
+  if (points.size() < 30)
   {
     RCLCPP_WARN(this->get_logger(), "Not enough points for RANSAC.");
     return false;
@@ -221,7 +214,7 @@ bool LandmarkLocalization::perform_ransac(const std::vector<Point3D> &points, st
   }
 }
 
-bool LandmarkLocalization::perform_line_ransac(const std::vector<Point3D> &points, double &yaw_angle)
+bool LandmarkLocalization::perform_line_ransac(const std::vector<Point3D> &points, double &angle)
 {
   if (points.size() < 2)
   {
@@ -277,7 +270,7 @@ bool LandmarkLocalization::perform_line_ransac(const std::vector<Point3D> &point
   // インライアー数が一定以上
   if (best_inliers > points.size() * 0.3)
   {
-    yaw_angle = std::atan(best_slope);
+    angle = std::atan(best_slope);
     return true;
   }
   else
@@ -287,48 +280,49 @@ bool LandmarkLocalization::perform_line_ransac(const std::vector<Point3D> &point
   }
 }
 
-void LandmarkLocalization::load_parameters()
+std::array<double, 3> LandmarkLocalization::calculate_centroid(const std::vector<Point3D> &points)
 {
-  this->declare_parameter("min_x", -10.0);
-  this->declare_parameter("max_x", 10.0);
-  this->declare_parameter("min_y", -10.0);
-  this->declare_parameter("max_y", 10.0);
-  this->declare_parameter("min_z", -2.0);
-  this->declare_parameter("max_z", 5.0);
-  this->declare_parameter("voxel_size_x", 0.1);
-  this->declare_parameter("voxel_size_y", 0.1);
-  this->declare_parameter("voxel_size_z", 0.1);
-  this->declare_parameter("D_voxel_size_x", 0.05);
-  this->declare_parameter("D_voxel_size_y", 0.05);
-  this->declare_parameter("D_voxel_size_z", 0.05);
-  this->declare_parameter("voxel_search_range", 3);
-  this->declare_parameter("ball_radius", 0.1);
+  double centroid_x = 0.0, centroid_y = 0.0, centroid_z = 0.0;
+  for (const auto &pt : points)
+  {
+    centroid_x += pt.x;
+    centroid_y += pt.y;
+  }
+  size_t inlier_size = points.size();
+  centroid_x /= inlier_size;
+  centroid_y /= inlier_size;
+  centroid_z = 0.0;
 
-  // 新しいパラメータの宣言
-  this->declare_parameter("vertical_threshold_deg", 10.0); // 例: 10度
-
-  params_.min_x = this->get_parameter("min_x").as_double();
-  params_.max_x = this->get_parameter("max_x").as_double();
-  params_.min_y = this->get_parameter("min_y").as_double();
-  params_.max_y = this->get_parameter("max_y").as_double();
-  params_.min_z = this->get_parameter("min_z").as_double();
-  params_.max_z = this->get_parameter("max_z").as_double();
-  params_.voxel_size_x = this->get_parameter("voxel_size_x").as_double();
-  params_.voxel_size_y = this->get_parameter("voxel_size_y").as_double();
-  params_.voxel_size_z = this->get_parameter("voxel_size_z").as_double();
-  params_.D_voxel_size_x = this->get_parameter("D_voxel_size_x").as_double();
-  params_.D_voxel_size_y = this->get_parameter("D_voxel_size_y").as_double();
-  params_.D_voxel_size_z = this->get_parameter("D_voxel_size_z").as_double();
-  params_.voxel_search_range = this->get_parameter("voxel_search_range").as_int();
-  params_.ball_radius = this->get_parameter("ball_radius").as_double();
-
-  // 新しいパラメータの取得
-  vertical_threshold_deg_ = this->get_parameter("vertical_threshold_deg").as_double();
+  return {centroid_x, centroid_y, centroid_z};
 }
 
-void LandmarkLocalization::create_plane_marker(const std::array<float, 4> &plane_coefficients, const std::array<double, 3> &centroid)
+void LandmarkLocalization::translate_points(std::vector<Point3D> &points, const std::array<double, 3> &centroid)
 {
-  // RViz2 用のマーカを作成
+  for (auto &pt : points)
+  {
+    pt.x -= centroid[0];
+    pt.y -= centroid[1];
+  }
+}
+
+void LandmarkLocalization::publish_downsampled_points(const std::vector<Point3D> &downsampled_points)
+{
+  PointCloudProcessor processor(params_);
+  sensor_msgs::msg::PointCloud2 downsampled_msg = processor.vector_to_PC2(downsampled_points);
+  downsampled_msg.header.frame_id = "map";
+  downsampled_publisher_->publish(downsampled_msg);
+}
+
+void LandmarkLocalization::publish_inliers(const std::vector<Point3D> &inliers)
+{
+  PointCloudProcessor processor(params_);
+  sensor_msgs::msg::PointCloud2 inliers_msg = processor.vector_to_PC2(inliers);
+  inliers_msg.header.frame_id = "map";
+  inliers_publisher_->publish(inliers_msg);
+}
+
+void LandmarkLocalization::publish_plane_marker(const std::array<float, 4> &plane_coefficients, const std::array<double, 3> &centroid)
+{
   visualization_msgs::msg::Marker plane_marker;
   plane_marker.header.frame_id = "map";
   plane_marker.ns = "planes";
@@ -375,7 +369,7 @@ void LandmarkLocalization::create_plane_marker(const std::array<float, 4> &plane
   plane_marker_publisher_->publish(plane_marker);
 }
 
-void LandmarkLocalization::create_robot_marker(const std::array<double, 3> &robot_position, double robot_yaw)
+void LandmarkLocalization::publish_robot_markers(const std::array<double, 3> &robot_position, double robot_yaw)
 {
   // ロボットの位置マーカー（球体）
   visualization_msgs::msg::Marker robot_marker;
@@ -399,7 +393,7 @@ void LandmarkLocalization::create_robot_marker(const std::array<double, 3> &robo
 
   // Yaw角を調整してロボットの向きを設定
   // 平面がロボットに向かっている時にYaw角が0度になるように調整
-  double adjusted_yaw = robot_yaw; // 90度を加算
+  double adjusted_yaw = robot_yaw; // 必要に応じて調整
 
   // クォータニオンをYaw角から計算
   geometry_msgs::msg::Quaternion orientation;
@@ -464,4 +458,43 @@ int main(int argc, char **argv)
   rclcpp::spin(std::make_shared<LandmarkLocalization>());
   rclcpp::shutdown();
   return 0;
+}
+
+void LandmarkLocalization::load_parameters()
+{
+  this->declare_parameter("min_x", -10.0);
+  this->declare_parameter("max_x", 10.0);
+  this->declare_parameter("min_y", -10.0);
+  this->declare_parameter("max_y", 10.0);
+  this->declare_parameter("min_z", -2.0);
+  this->declare_parameter("max_z", 5.0);
+  this->declare_parameter("voxel_size_x", 0.1);
+  this->declare_parameter("voxel_size_y", 0.1);
+  this->declare_parameter("voxel_size_z", 0.1);
+  this->declare_parameter("D_voxel_size_x", 0.05);
+  this->declare_parameter("D_voxel_size_y", 0.05);
+  this->declare_parameter("D_voxel_size_z", 0.05);
+  this->declare_parameter("voxel_search_range", 3);
+  this->declare_parameter("ball_radius", 0.1);
+
+  // 新しいパラメータの宣言
+  this->declare_parameter("vertical_threshold_deg", 10.0); // 例: 10度
+
+  params_.min_x = this->get_parameter("min_x").as_double();
+  params_.max_x = this->get_parameter("max_x").as_double();
+  params_.min_y = this->get_parameter("min_y").as_double();
+  params_.max_y = this->get_parameter("max_y").as_double();
+  params_.min_z = this->get_parameter("min_z").as_double();
+  params_.max_z = this->get_parameter("max_z").as_double();
+  params_.voxel_size_x = this->get_parameter("voxel_size_x").as_double();
+  params_.voxel_size_y = this->get_parameter("voxel_size_y").as_double();
+  params_.voxel_size_z = this->get_parameter("voxel_size_z").as_double();
+  params_.D_voxel_size_x = this->get_parameter("D_voxel_size_x").as_double();
+  params_.D_voxel_size_y = this->get_parameter("D_voxel_size_y").as_double();
+  params_.D_voxel_size_z = this->get_parameter("D_voxel_size_z").as_double();
+  params_.voxel_search_range = this->get_parameter("voxel_search_range").as_int();
+  params_.ball_radius = this->get_parameter("ball_radius").as_double();
+
+  // 新しいパラメータの取得
+  vertical_threshold_deg_ = this->get_parameter("vertical_threshold_deg").as_double();
 }

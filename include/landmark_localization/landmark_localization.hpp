@@ -15,10 +15,18 @@ private:
   void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void load_parameters();
   bool perform_ransac(const std::vector<Point3D> &points, std::array<float, 4> &plane_coefficients, std::vector<Point3D> &inliers);
-  void create_plane_marker(const std::array<float, 4> &plane_coefficients, const std::array<double, 3> &centroid);
-  void create_robot_marker(const std::array<double, 3> &robot_position, double robot_yaw);
-  bool perform_line_ransac(const std::vector<Point3D> &points, double &yaw_angle);
+  bool perform_line_ransac(const std::vector<Point3D> &points, double &angle);
   double normalize_angle(double angle);
+  double arrange_angle(double &angle);
+  std::vector<Point3D> rotate_points(std::vector<Point3D> &points, double angle);
+
+  void publish_downsampled_points(const std::vector<Point3D> &downsampled_points);
+  void publish_inliers(const std::vector<Point3D> &inliers);
+  void publish_plane_marker(const std::array<float, 4> &plane_coefficients, const std::array<double, 3> &centroid);
+  void publish_robot_markers(const std::array<double, 3> &robot_position, double robot_yaw);
+
+  std::array<double, 3> calculate_centroid(const std::vector<Point3D> &points);
+  void translate_points(std::vector<Point3D> &points, const std::array<double, 3> &centroid);
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_;
 
