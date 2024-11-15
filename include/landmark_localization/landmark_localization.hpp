@@ -16,7 +16,9 @@ private:
   void load_parameters();
   bool perform_ransac(const std::vector<Point3D> &points, std::array<float, 4> &plane_coefficients, std::vector<Point3D> &inliers);
   void create_plane_marker(const std::array<float, 4> &plane_coefficients, const std::array<double, 3> &centroid);
-  void create_robot_marker(const std::array<double, 3> &robot_position);
+  void create_robot_marker(const std::array<double, 3> &robot_position, double robot_yaw);
+  bool perform_line_ransac(const std::vector<Point3D> &points, double &yaw_angle);
+  double normalize_angle(double angle);
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_;
 

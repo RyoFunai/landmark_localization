@@ -34,6 +34,7 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
 
   // downsampled_points をパブリッシュ
   sensor_msgs::msg::PointCloud2 downsampled_msg = processor.vector_to_PC2(downsampled_points);
+  downsampled_msg.header.frame_id = "map";
   downsampled_publisher_->publish(downsampled_msg);
 
   // RANSAC を実行して平面を推定
@@ -41,50 +42,76 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
   std::vector<Point3D> inliers;
   if (perform_ransac(downsampled_points, plane_coefficients, inliers))
   {
-    // インライア点群の重心を計算
-    double centroid_x = 0.0, centroid_y = 0.0, centroid_z = 0.0;
-    for (const auto &pt : inliers)
-    {
-      centroid_x += pt.x;
-      centroid_y += pt.y;
-      centroid_z += pt.z;
-    }
-    size_t inlier_size = inliers.size();
-    centroid_x /= inlier_size;
-    centroid_y /= inlier_size;
-    centroid_z /= inlier_size;
-
-    std::array<double, 3> centroid = {centroid_x, centroid_y, centroid_z};
-
-    // インライア点群を重心で圧縮（原点に移動）
     for (auto &pt : inliers)
     {
-      pt.x -= centroid_x;
-      pt.y -= centroid_y;
-      pt.z -= centroid_z;
+      pt.z = 0.0;
     }
 
-    // ロボットの相対的な位置を計算（重心の逆）
-    double robot_rel_x = -centroid_x;
-    double robot_rel_y = -centroid_y;
-    double robot_rel_z = -centroid_z;
+    // Yaw角の推定をRANSACで行う
+    double yaw_angle = 0.0;
+    if (perform_line_ransac(inliers, yaw_angle))
+    {
+      // インライア点群の重心を計算
+      double centroid_x = 0.0, centroid_y = 0.0, centroid_z = 0.0;
+      for (const auto &pt : inliers)
+      {
+        centroid_x += pt.x;
+        centroid_y += pt.y;
+      }
+      size_t inlier_size = inliers.size();
+      centroid_x /= inlier_size;
+      centroid_y /= inlier_size;
+      centroid_z = 0.0;
 
-    RCLCPP_INFO(this->get_logger(), "Robot relative position: x=%.2f, y=%.2f, z=%.2f", robot_rel_x, robot_rel_y, robot_rel_z);
+      std::array<double, 3> centroid = {centroid_x, centroid_y, centroid_z};
 
-    // ロボットの相対位置をマーカーとしてパブリッシュ
-    std::array<double, 3> robot_position = {robot_rel_x, robot_rel_y, robot_rel_z};
-    create_robot_marker(robot_position);
+      // インライア点群を重心で圧縮（原点に移動）
+      for (auto &pt : inliers)
+      {
+        pt.x -= centroid_x;
+        pt.y -= centroid_y;
+      }
 
-    // マーカーを作成してパブリッシュ
-    create_plane_marker(plane_coefficients, centroid);
+      // ロボットの相対的な位置を計算（重心の逆）
+      double robot_rel_x = -centroid_x;
+      double robot_rel_y = -centroid_y;
+      double robot_rel_z = -centroid_z;
 
-    // 圧縮後のインライア点群をパブリッシュ
-    sensor_msgs::msg::PointCloud2 inliers_msg = processor.vector_to_PC2(inliers);
-    inliers_msg.header.frame_id = "map";
-    inliers_publisher_->publish(inliers_msg);
+      RCLCPP_INFO(this->get_logger(), "Robot relative position: x=%.2f, y=%.2f, z=%.2f", robot_rel_x, robot_rel_y, robot_rel_z);
+      RCLCPP_INFO(this->get_logger(), "推定されたYaw角: %.2f 度", (yaw_angle + M_PI / 2.0) * (180.0 / M_PI));
+      double robot_yaw = normalize_angle(yaw_angle + M_PI / 2.0);
+      if (robot_yaw > M_PI / 2.0)
+      {
+        robot_yaw -= M_PI;
+      }
+      // ロボットの位置と向きをマーカーとしてパブリッシュ
+      RCLCPP_INFO(this->get_logger(), "normalize推定されたYaw角: %.2f 度", robot_yaw * (180.0 / M_PI));
+      std::array<double, 3> robot_position = {robot_rel_x, robot_rel_y, robot_rel_z};
+      create_robot_marker(robot_position, robot_yaw);
+
+      // マーカーを作成してパブリッシュ
+      create_plane_marker(plane_coefficients, centroid);
+
+      // 圧縮後のインライア点群をパブリッシュ
+      sensor_msgs::msg::PointCloud2 inliers_msg = processor.vector_to_PC2(inliers);
+      inliers_msg.header.frame_id = "map";
+      inliers_publisher_->publish(inliers_msg);
+    }
+    else
+    {
+      RCLCPP_WARN(this->get_logger(), "Yaw角の推定に失敗しました。");
+    }
   }
 }
 
+double LandmarkLocalization::normalize_angle(double angle)
+{
+  while (angle > M_PI)
+    angle -= 2.0 * M_PI;
+  while (angle <= -M_PI)
+    angle += 2.0 * M_PI;
+  return angle;
+}
 bool LandmarkLocalization::perform_ransac(const std::vector<Point3D> &points, std::array<float, 4> &plane_coefficients, std::vector<Point3D> &inliers)
 {
   if (points.size() < 3)
@@ -194,6 +221,72 @@ bool LandmarkLocalization::perform_ransac(const std::vector<Point3D> &points, st
   }
 }
 
+bool LandmarkLocalization::perform_line_ransac(const std::vector<Point3D> &points, double &yaw_angle)
+{
+  if (points.size() < 2)
+  {
+    RCLCPP_WARN(this->get_logger(), "線のRANSACに必要な点が不足しています。");
+    return false;
+  }
+
+  const int max_iterations = 100;
+  const float distance_threshold = 0.02;
+  size_t best_inliers = 0;
+  double best_slope = 0.0;
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<> dis(0, points.size() - 1);
+
+  for (int i = 0; i < max_iterations; ++i)
+  {
+    int idx1 = dis(gen);
+    int idx2 = dis(gen);
+    if (idx1 == idx2)
+      continue;
+
+    const Point3D &p1 = points[idx1];
+    const Point3D &p2 = points[idx2];
+
+    // y = mx + b の形式で線を定義
+    double delta_x = p2.x - p1.x;
+    double delta_y = p2.y - p1.y;
+
+    if (delta_x == 0)
+      continue; // 垂直な線はスキップ
+
+    double slope = delta_y / delta_x;
+    double intercept = p1.y - slope * p1.x;
+
+    // インライアーを数える
+    size_t inliers_count = 0;
+    for (const auto &pt : points)
+    {
+      double distance = std::abs(slope * pt.x - pt.y + intercept) / std::sqrt(slope * slope + 1);
+      if (distance < distance_threshold)
+        inliers_count++;
+    }
+
+    if (inliers_count > best_inliers)
+    {
+      best_inliers = inliers_count;
+      best_slope = slope;
+    }
+  }
+
+  // インライアー数が一定以上
+  if (best_inliers > points.size() * 0.3)
+  {
+    yaw_angle = std::atan(best_slope);
+    return true;
+  }
+  else
+  {
+    RCLCPP_WARN(this->get_logger(), "線のRANSACが線を見つけるのに失敗しました。");
+    return false;
+  }
+}
+
 void LandmarkLocalization::load_parameters()
 {
   this->declare_parameter("min_x", -10.0);
@@ -248,11 +341,8 @@ void LandmarkLocalization::create_plane_marker(const std::array<float, 4> &plane
   plane_marker.scale.y = 0.91;               // 縦
   plane_marker.scale.z = DISTANCE_THRESHOLD; // 厚さ
 
-  // 平面の位置を重心に設定
+  // 平面の位置を原点に設定（重心を基準に移動済み）
   geometry_msgs::msg::Point point;
-  // point.x = centroid[0];
-  // point.y = centroid[1];
-  // point.z = centroid[2];
   point.x = 0.0;
   point.y = 0.0;
   point.z = 0.0;
@@ -281,11 +371,13 @@ void LandmarkLocalization::create_plane_marker(const std::array<float, 4> &plane
   plane_marker.color.b = 0.0f;
   plane_marker.color.a = 0.5f;
 
+  // 平面マーカーをパブリッシュ
   plane_marker_publisher_->publish(plane_marker);
 }
 
-void LandmarkLocalization::create_robot_marker(const std::array<double, 3> &robot_position)
+void LandmarkLocalization::create_robot_marker(const std::array<double, 3> &robot_position, double robot_yaw)
 {
+  // ロボットの位置マーカー（球体）
   visualization_msgs::msg::Marker robot_marker;
   robot_marker.header.frame_id = "map";
   robot_marker.ns = "robot";
@@ -305,11 +397,18 @@ void LandmarkLocalization::create_robot_marker(const std::array<double, 3> &robo
   position.z = robot_position[2];
   robot_marker.pose.position = position;
 
-  // ロボットの向きはアイデンティティクォータニオン
-  robot_marker.pose.orientation.x = 0.0;
-  robot_marker.pose.orientation.y = 0.0;
-  robot_marker.pose.orientation.z = 0.0;
-  robot_marker.pose.orientation.w = 1.0;
+  // Yaw角を調整してロボットの向きを設定
+  // 平面がロボットに向かっている時にYaw角が0度になるように調整
+  double adjusted_yaw = robot_yaw; // 90度を加算
+
+  // クォータニオンをYaw角から計算
+  geometry_msgs::msg::Quaternion orientation;
+  double half_yaw = adjusted_yaw / 2.0;
+  orientation.x = 0.0;
+  orientation.y = 0.0;
+  orientation.z = sin(half_yaw);
+  orientation.w = cos(half_yaw);
+  robot_marker.pose.orientation = orientation;
 
   // 色と透過性を設定（例: 青色、透明度 1.0）
   robot_marker.color.r = 0.0f;
@@ -319,6 +418,44 @@ void LandmarkLocalization::create_robot_marker(const std::array<double, 3> &robo
 
   // ロボットマーカーをパブリッシュ
   robot_marker_publisher_->publish(robot_marker);
+
+  // ロボットの向きを示すベクトルマーカーを作成
+  visualization_msgs::msg::Marker robot_vector;
+  robot_vector.header.frame_id = "map";
+  robot_vector.ns = "robot_vector";
+  robot_vector.id = 2;
+  robot_vector.type = visualization_msgs::msg::Marker::ARROW;
+  robot_vector.action = visualization_msgs::msg::Marker::ADD;
+
+  // 矢印の開始点をロボットの位置に設定
+  geometry_msgs::msg::Point start_point;
+  start_point.x = robot_position[0];
+  start_point.y = robot_position[1];
+  start_point.z = robot_position[2];
+
+  // 矢印の終了点を調整したYaw角に基づいて設定
+  double arrow_length = 0.5; // 矢印の長さを0.5mに設定
+  geometry_msgs::msg::Point end_point;
+  end_point.x = robot_position[0] + arrow_length * std::cos(adjusted_yaw);
+  end_point.y = robot_position[1] + arrow_length * std::sin(adjusted_yaw);
+  end_point.z = robot_position[2]; // 同じ高さに設定
+
+  robot_vector.points.push_back(start_point);
+  robot_vector.points.push_back(end_point);
+
+  // 矢印のサイズを設定
+  robot_vector.scale.x = 0.05; // 矢印の径
+  robot_vector.scale.y = 0.1;  // 矢じりの幅
+  robot_vector.scale.z = 0.1;  // 矢じりの高さ
+
+  // 矢印の色と透明度を設定（例: 赤色、透明度 1.0）
+  robot_vector.color.r = 1.0f;
+  robot_vector.color.g = 0.0f;
+  robot_vector.color.b = 0.0f;
+  robot_vector.color.a = 1.0f;
+
+  // 矢印マーカーをパブリッシュ
+  robot_marker_publisher_->publish(robot_vector);
 }
 
 int main(int argc, char **argv)
