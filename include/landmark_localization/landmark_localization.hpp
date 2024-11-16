@@ -1,4 +1,7 @@
-#pragma once
+#ifndef LANDMARK_LOCALIZATION_HPP
+#define LANDMARK_LOCALIZATION_HPP
+
+#include "landmark_localization/visibility.h"
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -7,9 +10,10 @@
 #include "pointcloud_processor/types.hpp"
 #include <eigen3/Eigen/Dense>
 #include "landmark_localization/pose_fuser.hpp"
-#include "landmark_localization/ransac.hpp" // 新しく追加
+#include "landmark_localization/ransac.hpp"
+#include "landmark_localization/visibility.h"
 
-class LandmarkLocalization : public rclcpp::Node
+class LANDMARK_LOCALIZATION_PUBLIC LandmarkLocalization : public rclcpp::Node
 {
 public:
   LandmarkLocalization();
@@ -62,3 +66,5 @@ private:
   bool first_time_ = true;
   const float distance_threshold = 0.02;
 };
+
+#endif // LANDMARK_LOCALIZATION_HPP
