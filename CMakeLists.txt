@@ -8,18 +8,13 @@ endif()
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 
-ament_auto_add_executable(landmark_localization
+ament_auto_add_library(landmark_localization
   src/landmark_localization.cpp
   src/pose_fuser.cpp
   src/ransac.cpp
 )
 
-# エクスポート設定を削除
-# ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-# ament_export_dependencies(
-#   ${dependencies}
-# )
-# ament_export_libraries(${PROJECT_NAME})
 ament_export_include_directories(include)
+ament_export_libraries(landmark_localization)
 
 ament_auto_package(INSTALL_TO_SHARE)
