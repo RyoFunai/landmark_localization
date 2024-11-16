@@ -11,6 +11,7 @@ ament_auto_find_build_dependencies()
 ament_auto_add_executable(landmark_localization
   src/landmark_localization.cpp
   src/pose_fuser.cpp
+  src/ransac.cpp
 )
 
 ament_auto_package(INSTALL_TO_SHARE)

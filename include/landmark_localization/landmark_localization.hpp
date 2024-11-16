@@ -7,6 +7,8 @@
 #include "pointcloud_processor/types.hpp"
 #include <eigen3/Eigen/Dense>
 #include "landmark_localization/pose_fuser.hpp"
+#include "landmark_localization/ransac.hpp" // 新しく追加
+
 class LandmarkLocalization : public rclcpp::Node
 {
 public:
@@ -15,11 +17,6 @@ public:
 private:
   void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void load_parameters();
-  bool perform_ransac(const std::vector<Point3D> &points, std::array<float, 4> &plane_coefficients, std::vector<Point3D> &inliers);
-  bool perform_line_ransac(const std::vector<LaserPoint> &points, double &angle);
-  double normalize_angle(double angle);
-  double arrange_angle(double &angle);
-  std::vector<LaserPoint> rotate_points(std::vector<LaserPoint> &points, double angle);
 
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
   void publish_downsampled_points(const std::vector<Point3D> &downsampled_points);
@@ -29,9 +26,7 @@ private:
   void publish_robot_markers(Vector3d &robot_position);
   void publish_marker(Vector3d &marker_position);
   void timer_callback();
-  
-  std::array<double, 2> calculate_mean(const std::vector<LaserPoint> &points);
-  std::array<double, 2> calculate_centroid(const std::vector<LaserPoint> &points);
+
   template <typename PointT>
   void translate_points(std::vector<PointT> &points, const std::array<double, 2> &centroid)
   {
@@ -41,7 +36,7 @@ private:
       pt.y -= centroid[1];
     }
   }
-  bool check_plane_size(const std::vector<Point3D> &plane_inliers, const std::vector<LaserPoint> &rotated_inliers, double &width, double &height);
+
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscription_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr downsampled_publisher_;
@@ -56,6 +51,7 @@ private:
 
   Parameters params_;
   PoseFuser pose_fuser_;
+  std::shared_ptr<Ransac> ransac_; // Ransac クラスのメンバ追加
   double vertical_threshold_deg_;
   Vector3d current_scan_odom_vec = Vector3d::Zero();
   double vt = 0.0;

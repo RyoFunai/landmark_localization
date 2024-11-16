@@ -5,12 +5,6 @@
 using namespace std;
 using namespace Eigen;
 
-struct LaserPoint
-{
-  double x = 0.0;
-  double y = 0.0;
-};
-
 struct CorrespondLaserPoint{
   double x;
   double y;
