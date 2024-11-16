@@ -34,6 +34,11 @@ namespace landmark_localization
 
     load_parameters();
     pose_fuser_.setup(params_.laser_weight, params_.odom_weight_liner, params_.odom_weight_angler);
+    ransac = std::make_unique<Ransac>(params_);
+
+    RCLCPP_INFO(this->get_logger(), "landmark_localization initialized");
+    RCLCPP_INFO(this->get_logger(), "params_.odom2laser_x: %f", params_.odom2laser_x);
+    RCLCPP_INFO(this->get_logger(), "params_.odom2laser_y: %f", params_.odom2laser_y);
   }
 
   void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -93,6 +98,14 @@ namespace landmark_localization
         Vector3d est_diff = estimated - current_scan_odom; // 直線からの推定値がデフォルト
         est_diff_sum += est_diff;
         /////////////////////////////////////////////////////////////////////////////////////////////
+
+        // Yaw角を考慮して odom2laser のオフセットを回転
+        double cos_yaw = std::cos(robot_position_vec[2]);
+        double sin_yaw = std::sin(robot_position_vec[2]);
+        double rotated_odom2laser_x = params_.odom2laser_x * cos_yaw - params_.odom2laser_y * sin_yaw;
+        double rotated_odom2laser_y = params_.odom2laser_x * sin_yaw + params_.odom2laser_y * cos_yaw;
+        robot_position_vec[0] -= rotated_odom2laser_x; // laserの位置が求まったので、odomの位置に変換
+        robot_position_vec[1] -= rotated_odom2laser_y;
         publish_robot_markers(robot_position_vec);
         publish_plane_marker(plane_coefficients);
         publish_detected_plane_marker(width, height);
@@ -146,25 +159,27 @@ namespace landmark_localization
 
   void LandmarkLocalization::load_parameters()
   {
-    this->declare_parameter("min_x", -10.0);
-    this->declare_parameter("max_x", 10.0);
-    this->declare_parameter("min_y", -10.0);
-    this->declare_parameter("max_y", 10.0);
-    this->declare_parameter("min_z", -2.0);
-    this->declare_parameter("max_z", 5.0);
-    this->declare_parameter("D_voxel_size_x", 0.1);
-    this->declare_parameter("D_voxel_size_y", 0.1);
-    this->declare_parameter("D_voxel_size_z", 0.1);
+    // this->declare_parameter("min_x", -10.0);
+    // this->declare_parameter("max_x", 10.0);
+    // this->declare_parameter("min_y", -10.0);
+    // this->declare_parameter("max_y", 10.0);
+    // this->declare_parameter("min_z", -2.0);
+    // this->declare_parameter("max_z", 5.0);
+    // this->declare_parameter("D_voxel_size_x", 0.1);
+    // this->declare_parameter("D_voxel_size_y", 0.1);
+    // this->declare_parameter("D_voxel_size_z", 0.1);
 
-    this->declare_parameter("landmark_width", 0.9);
-    this->declare_parameter("landmark_height", 0.91);
-    this->declare_parameter("width_tolerance", 0.1);
-    this->declare_parameter("height_tolerance", 0.4);
-    this->declare_parameter("laser_weight", 1.0);
-    this->declare_parameter("odom_weight_liner", 1.0e-2);
-    this->declare_parameter("odom_weight_angler", 1.0e-2);
-    this->declare_parameter("plane_iterations", 100);
-    this->declare_parameter("line_iterations", 100);
+    // this->declare_parameter("landmark_width", 0.9);
+    // this->declare_parameter("landmark_height", 0.91);
+    // this->declare_parameter("width_tolerance", 0.1);
+    // this->declare_parameter("height_tolerance", 0.4);
+    // this->declare_parameter("laser_weight", 1.0);
+    // this->declare_parameter("odom_weight_liner", 1.0e-2);
+    // this->declare_parameter("odom_weight_angler", 1.0e-2);
+    // this->declare_parameter("plane_iterations", 100);
+    // this->declare_parameter("line_iterations", 100);
+    // this->declare_parameter("odom2laser_x", 0.0);
+    // this->declare_parameter("odom2laser_y", 0.0);
 
     params_.min_x = this->get_parameter("min_x").as_double();
     params_.max_x = this->get_parameter("max_x").as_double();
@@ -185,8 +200,9 @@ namespace landmark_localization
     params_.height_tolerance = this->get_parameter("height_tolerance").as_double();
     params_.plane_iterations = this->get_parameter("plane_iterations").as_int();
     params_.line_iterations = this->get_parameter("line_iterations").as_int();
+    params_.odom2laser_x = this->get_parameter("odom2laser_x").as_double();
+    params_.odom2laser_y = this->get_parameter("odom2laser_y").as_double();
 
-    ransac = std::make_unique<Ransac>(params_);
   }
 
   void LandmarkLocalization::publish_downsampled_points(const std::vector<Point3D> &downsampled_points)
