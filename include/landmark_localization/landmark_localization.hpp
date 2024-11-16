@@ -25,22 +25,34 @@ private:
   void publish_downsampled_points(const std::vector<Point3D> &downsampled_points);
   void publish_inliers(const std::vector<Point3D> &inliers);
   void publish_plane_marker(const std::array<float, 4> &plane_coefficients);
+  void publish_detected_plane_marker(double width, double height);
   void publish_robot_markers(Vector3d &robot_position);
   void publish_marker(Vector3d &marker_position);
-
+  void timer_callback();
+  
   std::array<double, 2> calculate_mean(const std::vector<LaserPoint> &points);
   std::array<double, 2> calculate_centroid(const std::vector<LaserPoint> &points);
-  void translate_points(std::vector<LaserPoint> &points, const std::array<double, 2> &centroid);
-  bool check_plane_size(const std::vector<Point3D> &plane_inliers, const std::vector<LaserPoint> &rotated_inliers);
+  template <typename PointT>
+  void translate_points(std::vector<PointT> &points, const std::array<double, 2> &centroid)
+  {
+    for (auto &pt : points)
+    {
+      pt.x -= centroid[0];
+      pt.y -= centroid[1];
+    }
+  }
+  bool check_plane_size(const std::vector<Point3D> &plane_inliers, const std::vector<LaserPoint> &rotated_inliers, double &width, double &height);
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscription_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr downsampled_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr plane_marker_publisher_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr detected_plane_marker_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr inliers_publisher_;
 
   // ロボット位置用のパブリッシャーを追加
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr robot_marker_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_publisher_;
+  rclcpp::TimerBase::SharedPtr timer_;
 
   Parameters params_;
   PoseFuser pose_fuser_;
@@ -53,5 +65,4 @@ private:
   Vector3d last_odom = Vector3d::Zero();
   Vector3d est_diff_sum = Vector3d::Zero();
   bool first_time_ = true;
-
 };
