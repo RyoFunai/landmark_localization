@@ -45,4 +45,6 @@ private:
   PoseFuser pose_fuser_;
   double vertical_threshold_deg_;
   Vector3d current_scan_odom_vec = Vector3d(0.0, 0.0, 0.0);
+  double vt = 0.0;
+  double wt = 0.0;
 };

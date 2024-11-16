@@ -1,5 +1,5 @@
 #include "landmark_localization/pose_fuser.hpp"
-
+#include <iostream>
 void PoseFuser::setup(const double laser_weight, const double odom_weight_liner, const double odom_weight_angler)
 {
   laser_weight_ = laser_weight;
@@ -48,34 +48,21 @@ CorrespondLaserPoint PoseFuser::find_closest_vertical_point(CorrespondLaserPoint
   CorrespondLaserPoint closest;
   CorrespondLaserPoint vertical_distance;
   double distance_min = 100.0;
-  // if (robot_type_ == "ER")
-  // {
-  //   map_point_x = ER_map_point_x;
-  //   map_point_y = ER_map_point_y;
-  // }
-  // else if (robot_type_ == "RR")
-  // {
-  //   map_point_x = RR_map_point;
-  //   map_point_y = RR_map_point;
-  // }
   double map_point_x = 0.0;
   double map_point_y = 0.0;
-  for (int i = 0; i < 4; i++)
+  vertical_distance.x = fabs(map_point_x - global.x);
+  vertical_distance.y = fabs(map_point_y - global.y);
+  if (vertical_distance.x < distance_min)
   {
-    vertical_distance.x = fabs(map_point_x - global.x);
-    vertical_distance.y = fabs(map_point_y - global.y);
-    if (vertical_distance.x < distance_min)
-    {
-      distance_min = vertical_distance.x;
-      closest.x = map_point_x;
-      closest.y = global.y;
-    }
-    if (vertical_distance.y < distance_min)
-    {
-      distance_min = vertical_distance.y;
-      closest.x = global.x;
-      closest.y = map_point_y;
-    }
+    distance_min = vertical_distance.x;
+    closest.x = map_point_x;
+    closest.y = global.y;
+  }
+  if (vertical_distance.y < distance_min)
+  {
+    distance_min = vertical_distance.y;
+    closest.x = global.x;
+    closest.y = map_point_y;
   }
   if (closest.x == map_point_x)
   {
@@ -108,7 +95,7 @@ Matrix3d PoseFuser::calc_laser_cov(const Vector3d &laser_estimated, vector<Corre
     Jyaw.push_back((vertical_distance_yaw - vertical_distance) / dd);
   }
   // ヘッセ行列の近似J^TJの計算
-  Matrix3d hes = Matrix3d::Zero(3, 3); // 近似ヘッセ行列。0で初期化
+  Matrix3d hes = Matrix3d::Zero(3, 3);
   for (size_t i = 0; i < Jx.size(); i++)
   {
     hes(0, 0) += Jx[i] * Jx[i];
@@ -129,7 +116,7 @@ Matrix3d PoseFuser::calc_laser_cov(const Vector3d &laser_estimated, vector<Corre
 
 double PoseFuser::calc_vertical_distance(const CorrespondLaserPoint current, const CorrespondLaserPoint reference, double x, double y, double yaw)
 {
-  const double x_ = cos(yaw) * current.x - sin(yaw) * current.y + x; // clpを推定位置で座標変換
+  const double x_ = cos(yaw) * current.x - sin(yaw) * current.y + x;
   const double y_ = sin(yaw) * current.x + cos(yaw) * current.y + y;
   return (x_ - reference.x) * reference.nx + (y_ - reference.y) * reference.ny;
 }

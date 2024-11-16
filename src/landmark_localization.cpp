@@ -71,8 +71,6 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
 
       /////////////////////////////////////////////////////////////////////////////////////////////
       Vector3d robot_position_vec = {robot_position[0], robot_position[1], angle};
-      double vt = 0.0;
-      double wt = 0.0;
       std::vector<LaserPoint> rotated_inliers_lp;
       std::vector<LaserPoint> global_points;
       for (auto &pt : rotated_inliers)
@@ -86,6 +84,11 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
         global_points.push_back(laser_point);
       }
       Vector3d laser_estimated = pose_fuser_.fuse_pose(robot_position_vec, current_scan_odom_vec, vt, wt, rotated_inliers_lp, global_points);
+      RCLCPP_INFO(this->get_logger(), "");
+      RCLCPP_INFO(this->get_logger(), "current_scan_odom_vec: %f, %f, %f", current_scan_odom_vec[0], current_scan_odom_vec[1], current_scan_odom_vec[2]);
+      RCLCPP_INFO(this->get_logger(), "robot_position_vec   : %f, %f, %f", robot_position_vec[0], robot_position_vec[1], robot_position_vec[2]);
+      RCLCPP_INFO(this->get_logger(), "laser_estimated      : %f, %f, %f", laser_estimated[0], laser_estimated[1], laser_estimated[2]);
+
       publish_marker(laser_estimated[0], laser_estimated[1], laser_estimated[2]);
 
       /////////////////////////////////////////////////////////////////////////////////////////////
@@ -106,6 +109,8 @@ void LandmarkLocalization::odom_callback(const nav_msgs::msg::Odometry::SharedPt
   // オドメトリデータからx, y, yawを取得
   double x = msg->pose.pose.position.x;
   double y = msg->pose.pose.position.y;
+  vt = msg->twist.twist.linear.x;
+  wt = msg->twist.twist.angular.z;
 
   // クォータニオンからヨー角を計算
   tf2::Quaternion q(
@@ -146,13 +151,12 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     // 期待するサイズ
     const double expected_width = 0.91;
     const double expected_height = 0.6;
-    const double tolerance = 0.4; // ±40%
 
     // サイズの許容範囲
-    double min_width = expected_width * (1.0 - tolerance);
-    double max_width = expected_width * (1.0 + tolerance);
-    double min_height = expected_height * (1.0 - tolerance);
-    double max_height = expected_height * (1.0 + tolerance);
+    double min_width = expected_width * (1.0 - 0.1);
+    double max_width = expected_width * (1.0 + 0.5);
+    double min_height = expected_height * (1.0 - 0.5);
+    double max_height = expected_height * (1.0 + 0.5);
 
     // サイズチェック
     if (width < min_width || width > max_width || height < min_height || height > max_height)
@@ -613,7 +617,7 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     this->declare_parameter("ball_radius", 0.1);
 
     // 新しいパラメータの宣言
-    this->declare_parameter("vertical_threshold_deg", 10.0); // 例: 10度
+    this->declare_parameter("vertical_threshold_deg", 60.0); // 例: 10度
 
     params_.min_x = this->get_parameter("min_x").as_double();
     params_.max_x = this->get_parameter("max_x").as_double();
