@@ -14,4 +14,11 @@ ament_auto_add_executable(landmark_localization
   src/ransac.cpp
 )
 
+ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
+ament_export_dependencies(
+  ${dependencies}
+)
+ament_export_libraries(${PROJECT_NAME})
+ament_export_include_directories(include)
+
 ament_auto_package(INSTALL_TO_SHARE)

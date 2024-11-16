@@ -4,9 +4,7 @@
 #include <cmath>
 #include <Eigen/Dense>
 
-Ransac::Ransac(double vertical_threshold_deg) : vertical_threshold_deg_(vertical_threshold_deg)
-{
-}
+Ransac::Ransac(const Parameters &params) : params_(params) {}
 
 double Ransac::normalize_angle(double angle)
 {
@@ -51,7 +49,6 @@ bool Ransac::perform_ransac(const std::vector<Point3D> &points, std::array<float
     return false;
   }
 
-  const int max_iterations = 100;
   size_t best_inliers = 0;
   std::array<float, 4> best_plane = {0.0f, 0.0f, 0.0f, 0.0f};
   std::vector<Point3D> best_inlier_points;
@@ -62,10 +59,10 @@ bool Ransac::perform_ransac(const std::vector<Point3D> &points, std::array<float
 
   Eigen::Vector3f up(0.0f, 0.0f, 1.0f); // 地面の法線ベクトル
 
-  // 度をラジアンに変換し、コサインを計算
+  double vertical_threshold_deg_ = 70.0;  // 70度以上を検出
   float vertical_threshold_cos = std::cos(vertical_threshold_deg_ * M_PI / 180.0f);
 
-  for (int i = 0; i < max_iterations; ++i)
+  for (int i = 0; i < params_.plane_iterations; ++i)
   {
     // 3点をランダムに選択
     int idx1 = dis(gen);
@@ -160,7 +157,6 @@ bool Ransac::perform_line_ransac(const std::vector<LaserPoint> &points, double &
     return false;
   }
 
-  const int max_iterations = 100;
   const float distance_threshold = 0.02;
   size_t best_inliers = 0;
   double best_slope = 0.0;
@@ -169,7 +165,7 @@ bool Ransac::perform_line_ransac(const std::vector<LaserPoint> &points, double &
   std::mt19937 gen(rd());
   std::uniform_int_distribution<> dis(0, points.size() - 1);
 
-  for (int i = 0; i < max_iterations; ++i)
+  for (int i = 0; i < params_.line_iterations; ++i)
   {
     int idx1 = dis(gen);
     int idx2 = dis(gen);
@@ -244,15 +240,11 @@ bool Ransac::check_plane_size(const std::vector<Point3D> &plane_inliers, const s
   width = max_y - min_y;  // 横幅
   height = max_z - min_z; // 縦幅
 
-  // 期待するサイズ
-  const double expected_width = 0.91;
-  const double expected_height = 0.6;
-
   // サイズの許容範囲
-  double min_width = expected_width * (1.0 - 0.1);
-  double max_width = expected_width * (1.0 + 0.2);
-  double min_height = expected_height * (1.0 - 0.4);
-  double max_height = expected_height * (1.0 + 0.4);
+  double min_width = params_.landmark_width * (1.0 - params_.width_tolerance);
+  double max_width = params_.landmark_width * (1.0 + params_.width_tolerance);
+  double min_height = params_.landmark_height * (1.0 - params_.height_tolerance);
+  double max_height = params_.landmark_height * (1.0 + params_.height_tolerance);
 
   // サイズチェック
   if (width < min_width || width > max_width || height < min_height || height > max_height)

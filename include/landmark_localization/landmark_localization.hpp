@@ -51,8 +51,7 @@ private:
 
   Parameters params_;
   PoseFuser pose_fuser_;
-  std::shared_ptr<Ransac> ransac_; // Ransac クラスのメンバ追加
-  double vertical_threshold_deg_;
+  std::unique_ptr<Ransac> ransac; // Ransac クラスのメンバ追加
   Vector3d current_scan_odom_vec = Vector3d::Zero();
   double vt = 0.0;
   double wt = 0.0;
@@ -61,4 +60,5 @@ private:
   Vector3d last_odom = Vector3d::Zero();
   Vector3d est_diff_sum = Vector3d::Zero();
   bool first_time_ = true;
+  const float distance_threshold = 0.02;
 };

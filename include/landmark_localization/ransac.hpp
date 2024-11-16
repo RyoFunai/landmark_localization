@@ -7,7 +7,7 @@
 class Ransac
 {
 public:
-  Ransac(double vertical_threshold_deg);
+  Ransac(const Parameters &params);
 
   bool perform_ransac(const std::vector<Point3D> &points, std::array<float, 4> &plane_coefficients, std::vector<Point3D> &inliers);
   bool perform_line_ransac(const std::vector<LaserPoint> &points, double &angle);
@@ -19,5 +19,5 @@ public:
   std::array<double, 2> calculate_centroid(const std::vector<LaserPoint> &points);
 
 private:
-  double vertical_threshold_deg_;
+  Parameters params_;
 };

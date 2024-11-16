@@ -1,13 +1,12 @@
 #include "landmark_localization/landmark_localization.hpp"
-#include "landmark_localization/ransac.hpp" // 新しく追加
+#include "landmark_localization/ransac.hpp"
 #include "pointcloud_processor/pointcloud_processor.hpp"
 #include <tf2/utils.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <chrono>
 #include <random>
 #include <cmath>
-
-const float DISTANCE_THRESHOLD = 0.02;
+#include <chrono>
 
 LandmarkLocalization::LandmarkLocalization() : Node("landmark_localization")
 {
@@ -29,25 +28,22 @@ LandmarkLocalization::LandmarkLocalization() : Node("landmark_localization")
   marker_publisher_ = this->create_publisher<visualization_msgs::msg::Marker>("laser_estimated_marker", 10);
 
   load_parameters();
-  double laser_weight = 1.0;
-  double odom_weight_liner = 1.0e-2;
-  double odom_weight_angler = 1.0e-2;
-  pose_fuser_.setup(laser_weight, odom_weight_liner, odom_weight_angler);
-
-  // Ransac クラスの初期化
-  ransac_ = std::make_shared<Ransac>(vertical_threshold_deg_);
+  pose_fuser_.setup(params_.laser_weight, params_.odom_weight_liner, params_.odom_weight_angler);
 }
 
 void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
+  auto start = std::chrono::high_resolution_clock::now();
   PointCloudProcessor processor(params_);
   std::vector<Point3D> processed_points = processor.process_pointcloud(*msg);
   std::vector<Point3D> downsampled_points = processor.get_downsampled_points();
+  RCLCPP_INFO(this->get_logger(), "processed_points.size(): %ld", processed_points.size());
+  RCLCPP_INFO(this->get_logger(), "downsampled_points.size(): %ld", downsampled_points.size());
 
   // RANSAC を実行して平面を推定
   std::array<float, 4> plane_coefficients;
   std::vector<Point3D> plane_inliers;
-  if (ransac_->perform_ransac(downsampled_points, plane_coefficients, plane_inliers))
+  if (ransac->perform_ransac(downsampled_points, plane_coefficients, plane_inliers))
   {
     std::vector<LaserPoint> inliers_2d;
     for (auto pt : plane_inliers)
@@ -58,16 +54,16 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
 
     // Yaw角の推定をRANSACで行う
     double angle = 0.0;
-    if (ransac_->perform_line_ransac(inliers_2d, angle))
+    if (ransac->perform_line_ransac(inliers_2d, angle))
     {
-      angle = ransac_->normalize_angle(ransac_->arrange_angle(angle));
-      std::vector<LaserPoint> rotated_inliers = ransac_->rotate_points(inliers_2d, angle);
+      angle = ransac->normalize_angle(ransac->arrange_angle(angle));
+      std::vector<LaserPoint> rotated_inliers = ransac->rotate_points(inliers_2d, angle);
       double width = 0.0;
       double height = 0.0;
-      if (!ransac_->check_plane_size(plane_inliers, rotated_inliers, width, height))
+      if (!ransac->check_plane_size(plane_inliers, rotated_inliers, width, height))
         return;
       // インライア点群の重心を計算
-      std::array<double, 2> centroid = ransac_->calculate_centroid(rotated_inliers);
+      std::array<double, 2> centroid = ransac->calculate_centroid(rotated_inliers);
 
       // インライア点群を重心で圧縮（原点に移動）
       translate_points<LaserPoint>(inliers_2d, centroid);
@@ -93,6 +89,7 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
       est_diff_sum += est_diff;
       /////////////////////////////////////////////////////////////////////////////////////////////
       publish_robot_markers(robot_position_vec);
+      publish_plane_marker(plane_coefficients);
       publish_detected_plane_marker(width, height);
       translate_points<Point3D>(plane_inliers, centroid);
       publish_inliers(plane_inliers);
@@ -103,8 +100,10 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
       RCLCPP_WARN(this->get_logger(), "Yaw角の推定に失敗しました。");
     }
   }
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+  RCLCPP_INFO(this->get_logger(), "localization time: %ld ms", duration);
 }
-
 
 void LandmarkLocalization::timer_callback()
 {
@@ -148,17 +147,19 @@ void LandmarkLocalization::load_parameters()
   this->declare_parameter("max_y", 10.0);
   this->declare_parameter("min_z", -2.0);
   this->declare_parameter("max_z", 5.0);
-  this->declare_parameter("voxel_size_x", 0.1);
-  this->declare_parameter("voxel_size_y", 0.1);
-  this->declare_parameter("voxel_size_z", 0.1);
-  this->declare_parameter("D_voxel_size_x", 0.05);
-  this->declare_parameter("D_voxel_size_y", 0.05);
-  this->declare_parameter("D_voxel_size_z", 0.05);
-  this->declare_parameter("voxel_search_range", 3);
-  this->declare_parameter("ball_radius", 0.1);
+  this->declare_parameter("D_voxel_size_x", 0.1);
+  this->declare_parameter("D_voxel_size_y", 0.1);
+  this->declare_parameter("D_voxel_size_z", 0.1);
 
-  // 新しいパラメータの宣言
-  this->declare_parameter("vertical_threshold_deg", 60.0); // 例: 60度
+  this->declare_parameter("landmark_width", 0.9);
+  this->declare_parameter("landmark_height", 0.91);
+  this->declare_parameter("width_tolerance", 0.1);
+  this->declare_parameter("height_tolerance", 0.4);
+  this->declare_parameter("laser_weight", 1.0);
+  this->declare_parameter("odom_weight_liner", 1.0e-2);
+  this->declare_parameter("odom_weight_angler", 1.0e-2);
+  this->declare_parameter("plane_iterations", 100);
+  this->declare_parameter("line_iterations", 100);
 
   params_.min_x = this->get_parameter("min_x").as_double();
   params_.max_x = this->get_parameter("max_x").as_double();
@@ -166,17 +167,21 @@ void LandmarkLocalization::load_parameters()
   params_.max_y = this->get_parameter("max_y").as_double();
   params_.min_z = this->get_parameter("min_z").as_double();
   params_.max_z = this->get_parameter("max_z").as_double();
-  params_.voxel_size_x = this->get_parameter("voxel_size_x").as_double();
-  params_.voxel_size_y = this->get_parameter("voxel_size_y").as_double();
-  params_.voxel_size_z = this->get_parameter("voxel_size_z").as_double();
   params_.D_voxel_size_x = this->get_parameter("D_voxel_size_x").as_double();
   params_.D_voxel_size_y = this->get_parameter("D_voxel_size_y").as_double();
   params_.D_voxel_size_z = this->get_parameter("D_voxel_size_z").as_double();
-  params_.voxel_search_range = this->get_parameter("voxel_search_range").as_int();
-  params_.ball_radius = this->get_parameter("ball_radius").as_double();
 
-  // 新しいパラメータの取得
-  vertical_threshold_deg_ = this->get_parameter("vertical_threshold_deg").as_double();
+  params_.landmark_width = this->get_parameter("landmark_width").as_double();
+  params_.landmark_height = this->get_parameter("landmark_height").as_double();
+  params_.laser_weight = this->get_parameter("laser_weight").as_double();
+  params_.odom_weight_liner = this->get_parameter("odom_weight_liner").as_double();
+  params_.odom_weight_angler = this->get_parameter("odom_weight_angler").as_double();
+  params_.width_tolerance = this->get_parameter("width_tolerance").as_double();
+  params_.height_tolerance = this->get_parameter("height_tolerance").as_double();
+  params_.plane_iterations = this->get_parameter("plane_iterations").as_int();
+  params_.line_iterations = this->get_parameter("line_iterations").as_int();
+
+  ransac = std::make_unique<Ransac>(params_);
 }
 
 int main(int argc, char **argv)
@@ -215,7 +220,7 @@ void LandmarkLocalization::publish_plane_marker(const std::array<float, 4> &plan
   // 平面のサイズ（横910mm、縦600mm）
   plane_marker.scale.x = 0.6;                // 横
   plane_marker.scale.y = 0.91;               // 縦
-  plane_marker.scale.z = DISTANCE_THRESHOLD; // 厚さ
+  plane_marker.scale.z = distance_threshold; // 厚さ
 
   // 平面の位置を原点に設定（重心を基準に移動済み）
   geometry_msgs::msg::Point point;
@@ -262,7 +267,7 @@ void LandmarkLocalization::publish_detected_plane_marker(double width, double he
 
   plane_marker.scale.x = height;             // 横
   plane_marker.scale.y = width;              // 縦
-  plane_marker.scale.z = DISTANCE_THRESHOLD; // 厚さ
+  plane_marker.scale.z = distance_threshold; // 厚さ
 
   geometry_msgs::msg::Point point;
   point.x = 0.0;
@@ -398,9 +403,6 @@ void LandmarkLocalization::publish_marker(Vector3d &marker_position)
   marker.color.r = 1.0;
   marker.color.g = 0.0;
   marker.color.b = 0.0;
-
-  // ライフタイムの設定（必要に応じて）
-  // marker.lifetime = rclcpp::Duration();
 
   // マーカーをパブリッシュ
   marker_publisher_->publish(marker);
