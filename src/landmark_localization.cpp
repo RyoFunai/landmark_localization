@@ -65,27 +65,23 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
       translate_points(rotated_inliers, centroid);
 
       /////////////////////////////////////////////////////////////////////////////////////////////
+      Vector3d current_scan_odom = odom + est_diff_sum;
+
       Vector3d robot_position_vec = {-centroid[0], -centroid[1], angle};
-      std::vector<LaserPoint> rotated_inliers_lp;
-      std::vector<LaserPoint> global_points;
-      for (auto &pt : rotated_inliers)
+      if (first_time_)
       {
-        LaserPoint laser_point = {pt.x, pt.y};
-        rotated_inliers_lp.push_back(laser_point);
+        first_time_ = false;
+        est_diff_sum = robot_position_vec;
       }
+      std::vector<LaserPoint> global_points;
       for (auto &pt : inliers_2d)
       {
         LaserPoint laser_point = {pt.x, pt.y};
         global_points.push_back(laser_point);
       }
-      Vector3d laser_estimated = pose_fuser_.fuse_pose(robot_position_vec, current_scan_odom_vec, vt, wt, rotated_inliers_lp, global_points);
-      RCLCPP_INFO(this->get_logger(), "");
-      RCLCPP_INFO(this->get_logger(), "current_scan_odom_vec: %f, %f, %f", current_scan_odom_vec[0], current_scan_odom_vec[1], current_scan_odom_vec[2]);
-      RCLCPP_INFO(this->get_logger(), "robot_position_vec   : %f, %f, %f", robot_position_vec[0], robot_position_vec[1], robot_position_vec[2]);
-      RCLCPP_INFO(this->get_logger(), "laser_estimated      : %f, %f, %f", laser_estimated[0], laser_estimated[1], laser_estimated[2]);
-
-      publish_marker(laser_estimated[0], laser_estimated[1], laser_estimated[2]);
-
+      Vector3d estimated = pose_fuser_.fuse_pose(robot_position_vec, current_scan_odom, vt, wt, inliers_2d, rotated_inliers);
+      Vector3d est_diff = estimated - current_scan_odom; // 直線からの推定値がデフォルト
+      est_diff_sum += est_diff;
       /////////////////////////////////////////////////////////////////////////////////////////////
       publish_robot_markers(robot_position_vec);
       publish_plane_marker(plane_coefficients);
@@ -115,7 +111,19 @@ void LandmarkLocalization::odom_callback(const nav_msgs::msg::Odometry::SharedPt
       msg->pose.pose.orientation.z,
       msg->pose.pose.orientation.w);
   double yaw = tf2::getYaw(q);
-  current_scan_odom_vec = Vector3d(x, y, yaw);
+
+  diff_odom[0] = x - last_odom[0];
+  diff_odom[1] = y - last_odom[1];
+  diff_odom[2] = yaw - last_odom[2];
+
+  odom[0] += diff_odom[0];
+  odom[1] += diff_odom[1];
+  odom[2] += diff_odom[2];
+  last_odom[0] = x;
+  last_odom[1] = y;
+  last_odom[2] = yaw;
+  Vector3d marker_position = odom + est_diff_sum;
+  publish_marker(marker_position);
 }
 
 bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_inliers, const std::vector<LaserPoint> &rotated_inliers)
@@ -585,7 +593,7 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     robot_marker_publisher_->publish(robot_vector);
   }
 
-  void LandmarkLocalization::publish_marker(double x, double y, double yaw)
+  void LandmarkLocalization::publish_marker(Vector3d &marker_position)
   {
     visualization_msgs::msg::Marker marker;
 
@@ -596,13 +604,13 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     marker.id = 0;
     marker.type = visualization_msgs::msg::Marker::SPHERE;
     marker.action = visualization_msgs::msg::Marker::ADD;
-    marker.pose.position.x = x;
-    marker.pose.position.y = y;
+    marker.pose.position.x = marker_position[0];
+    marker.pose.position.y = marker_position[1];
     marker.pose.position.z = 0.0;
 
     // クォータニオンの設定
     tf2::Quaternion q;
-    q.setRPY(0, 0, yaw);
+    q.setRPY(0, 0, marker_position[2]);
     marker.pose.orientation.x = q.x();
     marker.pose.orientation.y = q.y();
     marker.pose.orientation.z = q.z();

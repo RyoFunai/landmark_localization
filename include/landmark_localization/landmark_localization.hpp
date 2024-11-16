@@ -26,7 +26,7 @@ private:
   void publish_inliers(const std::vector<Point3D> &inliers);
   void publish_plane_marker(const std::array<float, 4> &plane_coefficients);
   void publish_robot_markers(Vector3d &robot_position);
-  void publish_marker(double x, double y, double yaw);
+  void publish_marker(Vector3d &marker_position);
 
   std::array<double, 2> calculate_mean(const std::vector<LaserPoint> &points);
   std::array<double, 2> calculate_centroid(const std::vector<LaserPoint> &points);
@@ -45,7 +45,13 @@ private:
   Parameters params_;
   PoseFuser pose_fuser_;
   double vertical_threshold_deg_;
-  Vector3d current_scan_odom_vec = Vector3d(0.0, 0.0, 0.0);
+  Vector3d current_scan_odom_vec = Vector3d::Zero();
   double vt = 0.0;
   double wt = 0.0;
+  Vector3d diff_odom = Vector3d::Zero();
+  Vector3d odom = Vector3d::Zero();
+  Vector3d last_odom = Vector3d::Zero();
+  Vector3d est_diff_sum = Vector3d::Zero();
+  bool first_time_ = true;
+
 };
