@@ -38,18 +38,16 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
   std::vector<Point3D> processed_points = processor.process_pointcloud(*msg);
   std::vector<Point3D> downsampled_points = processor.get_downsampled_points();
 
-  publish_downsampled_points(downsampled_points);
-
   // RANSAC を実行して平面を推定
   std::array<float, 4> plane_coefficients;
   std::vector<Point3D> plane_inliers;
   if (perform_ransac(downsampled_points, plane_coefficients, plane_inliers))
   {
-    std::vector<Point3D> inliers_2d = plane_inliers;
-
-    for (auto &pt : inliers_2d)
+    std::vector<LaserPoint> inliers_2d;
+    for (auto pt : plane_inliers)
     {
-      pt.z = 0.0;
+      LaserPoint laser_point = {pt.x, pt.y};
+      inliers_2d.push_back(laser_point);
     }
 
     // Yaw角の推定をRANSACで行う
@@ -57,20 +55,17 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
     if (perform_line_ransac(inliers_2d, angle))
     {
       angle = normalize_angle(arrange_angle(angle));
-      std::vector<Point3D> rotated_inliers = rotate_points(inliers_2d, angle);
+      std::vector<LaserPoint> rotated_inliers = rotate_points(inliers_2d, angle);
       if (!check_plane_size(plane_inliers, rotated_inliers))
         return;
       // インライア点群の重心を計算
-      std::array<double, 3> centroid = calculate_centroid(rotated_inliers);
+      std::array<double, 2> centroid = calculate_centroid(rotated_inliers);
 
       // インライア点群を重心で圧縮（原点に移動）
       translate_points(rotated_inliers, centroid);
 
-      // ロボットの相対的な位置を計算（重心の逆）
-      std::array<double, 3> robot_position = {-centroid[0], -centroid[1], -centroid[2]};
-
       /////////////////////////////////////////////////////////////////////////////////////////////
-      Vector3d robot_position_vec = {robot_position[0], robot_position[1], angle};
+      Vector3d robot_position_vec = {-centroid[0], -centroid[1], angle};
       std::vector<LaserPoint> rotated_inliers_lp;
       std::vector<LaserPoint> global_points;
       for (auto &pt : rotated_inliers)
@@ -92,10 +87,11 @@ void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointClou
       publish_marker(laser_estimated[0], laser_estimated[1], laser_estimated[2]);
 
       /////////////////////////////////////////////////////////////////////////////////////////////
-      publish_robot_markers(robot_position, angle);
-      publish_plane_marker(plane_coefficients, centroid);
+      publish_robot_markers(robot_position_vec);
+      publish_plane_marker(plane_coefficients);
 
       publish_inliers(plane_inliers);
+      publish_downsampled_points(downsampled_points);
     }
     else
     {
@@ -122,7 +118,7 @@ void LandmarkLocalization::odom_callback(const nav_msgs::msg::Odometry::SharedPt
   current_scan_odom_vec = Vector3d(x, y, yaw);
 }
 
-bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_inliers, const std::vector<Point3D> &rotated_inliers)
+bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_inliers, const std::vector<LaserPoint> &rotated_inliers)
 {
     // 平面のサイズを計算
     double min_z = 100;
@@ -154,9 +150,9 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
 
     // サイズの許容範囲
     double min_width = expected_width * (1.0 - 0.1);
-    double max_width = expected_width * (1.0 + 0.5);
-    double min_height = expected_height * (1.0 - 0.5);
-    double max_height = expected_height * (1.0 + 0.5);
+    double max_width = expected_width * (1.0 + 0.2);
+    double min_height = expected_height * (1.0 - 0.4);
+    double max_height = expected_height * (1.0 + 0.4);
 
     // サイズチェック
     if (width < min_width || width > max_width || height < min_height || height > max_height)
@@ -180,9 +176,9 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     return angle;
   }
 
-  std::vector<Point3D> LandmarkLocalization::rotate_points(std::vector<Point3D> & points, double angle)
+  std::vector<LaserPoint> LandmarkLocalization::rotate_points(std::vector<LaserPoint> &points, double angle)
   {
-    std::vector<Point3D> rotated_points = points;
+    std::vector<LaserPoint> rotated_points = points;
     double cos_yaw = std::cos(-angle);
     double sin_yaw = std::sin(-angle);
 
@@ -314,7 +310,7 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     }
   }
 
-  bool LandmarkLocalization::perform_line_ransac(const std::vector<Point3D> &points, double &angle)
+  bool LandmarkLocalization::perform_line_ransac(const std::vector<LaserPoint> &points, double &angle)
   {
     if (points.size() < 2)
     {
@@ -338,8 +334,8 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
       if (idx1 == idx2)
         continue;
 
-      const Point3D &p1 = points[idx1];
-      const Point3D &p2 = points[idx2];
+      const LaserPoint &p1 = points[idx1];
+      const LaserPoint &p2 = points[idx2];
 
       // y = mx + b の形式で線を定義
       double delta_x = p2.x - p1.x;
@@ -380,9 +376,9 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     }
   }
 
-  std::array<double, 3> LandmarkLocalization::calculate_centroid(const std::vector<Point3D> &points)
+  std::array<double, 2> LandmarkLocalization::calculate_mean(const std::vector<LaserPoint> &points)
   {
-    double centroid_x = 0.0, centroid_y = 0.0, centroid_z = 0.0;
+    double centroid_x = 0.0, centroid_y = 0.0;
     for (const auto &pt : points)
     {
       centroid_x += pt.x;
@@ -391,12 +387,52 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     size_t inlier_size = points.size();
     centroid_x /= inlier_size;
     centroid_y /= inlier_size;
-    centroid_z = 0.0;
 
-    return {centroid_x, centroid_y, centroid_z};
+    return {centroid_x, centroid_y};
   }
 
-  void LandmarkLocalization::translate_points(std::vector<Point3D> & points, const std::array<double, 3> &centroid)
+  std::array<double, 2> LandmarkLocalization::calculate_centroid(const std::vector<LaserPoint> &points)
+  {
+    if (points.empty())
+    {
+      return {0.0, 0.0}; // 空の場合は原点を返す
+    }
+
+    // x座標とy座標それぞれについて、すべての点の値を集める
+    std::vector<double> x_values;
+    std::vector<double> y_values;
+    x_values.reserve(points.size());
+    y_values.reserve(points.size());
+
+    for (const auto &pt : points)
+    {
+      x_values.push_back(pt.x);
+      y_values.push_back(pt.y);
+    }
+
+    // 各座標についてソートして中央値を取得
+    std::sort(x_values.begin(), x_values.end());
+    std::sort(y_values.begin(), y_values.end());
+
+    size_t mid = points.size() / 2;
+    double median_x, median_y;
+
+    if (points.size() % 2 == 0)
+    {
+      // 要素数が偶数の場合、中央の2つの値の平均を取る
+      median_x = (x_values[mid - 1] + x_values[mid]) / 2.0;
+      median_y = (y_values[mid - 1] + y_values[mid]) / 2.0;
+    }
+    else
+    {
+      // 要素数が奇数の場合、中央の値を取る
+      median_x = x_values[mid];
+      median_y = y_values[mid];
+    }
+
+    return {median_x, median_y};
+  }
+  void LandmarkLocalization::translate_points(std::vector<LaserPoint> &points, const std::array<double, 2> &centroid)
   {
     for (auto &pt : points)
     {
@@ -421,7 +457,7 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     inliers_publisher_->publish(inliers_msg);
   }
 
-  void LandmarkLocalization::publish_plane_marker(const std::array<float, 4> &plane_coefficients, const std::array<double, 3> &centroid)
+  void LandmarkLocalization::publish_plane_marker(const std::array<float, 4> &plane_coefficients)
   {
     visualization_msgs::msg::Marker plane_marker;
     plane_marker.header.frame_id = "map";
@@ -452,8 +488,10 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     Eigen::Vector3f normal(a, b, c);
     normal.normalize();
     Eigen::Vector3f up(0.0, 0.0, 1.0);
-    Eigen::Quaternionf q;
-    q.setFromTwoVectors(up, normal);
+    // Eigen::Quaternionf q;
+    // q.setFromTwoVectors(up, normal);
+    tf2::Quaternion q;
+    q.setRPY(0.0, M_PI/2, 0.0);
     plane_marker.pose.orientation.x = q.x();
     plane_marker.pose.orientation.y = q.y();
     plane_marker.pose.orientation.z = q.z();
@@ -469,7 +507,7 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     plane_marker_publisher_->publish(plane_marker);
   }
 
-  void LandmarkLocalization::publish_robot_markers(const std::array<double, 3> &robot_position, double robot_yaw)
+  void LandmarkLocalization::publish_robot_markers(Vector3d &robot_position)
   {
     // ロボットの位置マーカー（球体）
     visualization_msgs::msg::Marker robot_marker;
@@ -488,20 +526,17 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     geometry_msgs::msg::Point position;
     position.x = robot_position[0];
     position.y = robot_position[1];
-    position.z = robot_position[2];
     robot_marker.pose.position = position;
 
     // Yaw角を調整してロボットの向きを設定
     // 平面がロボットに向かっている時にYaw角が0度になるように調整
-    double adjusted_yaw = robot_yaw; // 必要に応じて調整
 
     // クォータニオンをYaw角から計算
     geometry_msgs::msg::Quaternion orientation;
-    double half_yaw = adjusted_yaw / 2.0;
     orientation.x = 0.0;
     orientation.y = 0.0;
-    orientation.z = sin(half_yaw);
-    orientation.w = cos(half_yaw);
+    orientation.z = sin(robot_position[2] / 2.0);
+    orientation.w = cos(robot_position[2] / 2.0);
     robot_marker.pose.orientation = orientation;
 
     // 色と透過性を設定（例: 青色、透明度 1.0）
@@ -525,14 +560,12 @@ bool LandmarkLocalization::check_plane_size(const std::vector<Point3D> &plane_in
     geometry_msgs::msg::Point start_point;
     start_point.x = robot_position[0];
     start_point.y = robot_position[1];
-    start_point.z = robot_position[2];
 
     // 矢印の終了点を調整したYaw角に基づいて設定
     double arrow_length = 0.5; // 矢印の長さを0.5mに設定
     geometry_msgs::msg::Point end_point;
-    end_point.x = robot_position[0] + arrow_length * std::cos(adjusted_yaw);
-    end_point.y = robot_position[1] + arrow_length * std::sin(adjusted_yaw);
-    end_point.z = robot_position[2]; // 同じ高さに設定
+    end_point.x = robot_position[0] + arrow_length * std::cos(robot_position[2]);
+    end_point.y = robot_position[1] + arrow_length * std::sin(robot_position[2]);
 
     robot_vector.points.push_back(start_point);
     robot_vector.points.push_back(end_point);
