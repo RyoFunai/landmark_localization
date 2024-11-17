@@ -45,10 +45,11 @@ namespace landmark_localization
   {
     auto start = std::chrono::high_resolution_clock::now();
     PointCloudProcessor processor(params_);
-    std::vector<Point3D> processed_points = processor.process_pointcloud(*msg);
-    std::vector<Point3D> downsampled_points = processor.get_downsampled_points();
-    RCLCPP_INFO(this->get_logger(), "processed_points.size(): %ld", processed_points.size());
-    RCLCPP_INFO(this->get_logger(), "downsampled_points.size(): %ld", downsampled_points.size());
+    RCLCPP_INFO(this->get_logger(), "");
+    auto start_process_pointcloud = std::chrono::high_resolution_clock::now();
+    std::vector<Point3D> downsampled_points = processor.process_pointcloud(*msg);
+    RCLCPP_INFO(this->get_logger(), "process_pointcloud took %ld ms", std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_process_pointcloud).count());
+
 
     // RANSAC を実行して平面を推定
     std::array<float, 4> plane_coefficients;
@@ -61,7 +62,6 @@ namespace landmark_localization
         LaserPoint laser_point = {pt.x, pt.y};
         inliers_2d.push_back(laser_point);
       }
-
       // Yaw角の推定をRANSACで行う
       double angle = 0.0;
       if (ransac->perform_line_ransac(inliers_2d, angle))
@@ -98,7 +98,6 @@ namespace landmark_localization
         Vector3d est_diff = estimated - current_scan_odom; // 直線からの推定値がデフォルト
         est_diff_sum += est_diff;
         /////////////////////////////////////////////////////////////////////////////////////////////
-
         // Yaw角を考慮して odom2laser のオフセットを回転
         double cos_yaw = std::cos(robot_position_vec[2]);
         double sin_yaw = std::sin(robot_position_vec[2]);

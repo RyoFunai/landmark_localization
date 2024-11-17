@@ -43,7 +43,7 @@ std::vector<LaserPoint> Ransac::rotate_points(std::vector<LaserPoint> &points, d
 
 bool Ransac::perform_ransac(const std::vector<Point3D> &points, std::array<float, 4> &plane_coefficients, std::vector<Point3D> &inliers)
 {
-  if (points.size() < 30)
+  if (points.size() < 10)
   {
     RCLCPP_WARN(rclcpp::get_logger("ransac"), "Not enough points for RANSAC.");
     return false;
