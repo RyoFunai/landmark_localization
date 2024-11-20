@@ -36,24 +36,49 @@ namespace landmark_localization
     pose_fuser_.setup(params_.laser_weight, params_.odom_weight_liner, params_.odom_weight_angler);
     ransac = std::make_unique<Ransac>(params_);
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    RCLCPP_INFO(this->get_logger(), "RealSenseの初期化を行います。");
-    cfg_.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_Z16, 30);
-    pipe_.start(cfg_);
-    rs2::pipeline_profile profile = pipe_.start(cfg_);
-    rs2_intrinsics intrinsics = profile.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
-    image_processing(intrinsics);
+    // rs2::config cfg_;
+    // RCLCPP_INFO(this->get_logger(), "RealSenseの初期化を行います。");
+    // cfg_.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_Z16, 30);
+    // RCLCPP_INFO(this->get_logger(), "0");
+    // rs2::pipeline pipe_;
+
+    // pipe_.start(cfg_);
+    // // RCLCPP_INFO(this->get_logger(), "1");
+    // // rs2::pipeline_profile profile = pipe_.start(cfg_); // 重複呼び出しを削除
+    // RCLCPP_INFO(this->get_logger(), "2");
+    // rs2::pipeline_profile profile = pipe_.get_active_profile();
+    // rs2_intrinsics intrinsics = profile.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
+    // RCLCPP_INFO(this->get_logger(), "初期化終わり");
+
+    // image_processing(intrinsics);
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    rs2::context ctx;
+    rs2::device_list devices = ctx.query_devices();
+    if (devices.size() == 0)
+    {
+      RCLCPP_ERROR(this->get_logger(), "Realsenseデバイスが接続されていません。");
+    }
+    else
+    {
+      RCLCPP_INFO(this->get_logger(), "接続されているRealsenseデバイス数: %d", devices.size());
+      for (auto &&device : devices)
+      {
+        RCLCPP_INFO(this->get_logger(), "デバイス名: %s", device.get_info(RS2_CAMERA_INFO_NAME));
+        RCLCPP_INFO(this->get_logger(), "シリアル番号: %s", device.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER));
+      }
+    }
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   }
 
   void LandmarkLocalization::image_processing(rs2_intrinsics &intrinsics)
   {
-    while (true)
-    {
-      rs2::frameset frames = pipe_.wait_for_frames();
-      rs2::depth_frame depth = frames.get_depth_frame();
-      std::vector<Point3D> point_cloud = depthToPoint3D(depth, intrinsics);
-      RCLCPP_INFO(this->get_logger(), "取得したポイント数: %zu", point_cloud.size());
-    }
+    // while (true)
+    // {
+    //   rs2::frameset frames = pipe_.wait_for_frames();
+    //   rs2::depth_frame depth = frames.get_depth_frame();
+    //   std::vector<Point3D> point_cloud = depthToPoint3D(depth, intrinsics);
+    //   RCLCPP_INFO(this->get_logger(), "取得したポイント数: %zu", point_cloud.size());
+    // }
   }
 
   void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)

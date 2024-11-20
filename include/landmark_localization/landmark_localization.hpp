@@ -40,8 +40,7 @@ namespace landmark_localization
     void image_processing(rs2_intrinsics &intrinsics);
     std::vector<Point3D> depthToPoint3D(rs2::depth_frame &depth, rs2_intrinsics &intrinsics);
     // RealSenseパイプライン
-    rs2::pipeline pipe_;
-    rs2::config cfg_;
+
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     template <typename PointT>
