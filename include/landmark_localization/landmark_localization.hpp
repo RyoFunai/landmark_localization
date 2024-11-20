@@ -13,6 +13,8 @@
 #include "landmark_localization/ransac.hpp"
 #include "landmark_localization/visibility.h"
 
+#include <librealsense2/rs.hpp>
+
 namespace landmark_localization
 {
   class LandmarkLocalization : public rclcpp::Node
@@ -34,6 +36,13 @@ namespace landmark_localization
     void publish_robot_markers(Vector3d &robot_position);
     void publish_marker(Vector3d &marker_position);
     void timer_callback();
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+    void image_processing(rs2_intrinsics &intrinsics);
+    std::vector<Point3D> depthToPoint3D(rs2::depth_frame &depth, rs2_intrinsics &intrinsics);
+    // RealSenseパイプライン
+    rs2::pipeline pipe_;
+    rs2::config cfg_;
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     template <typename PointT>
     void translate_points(std::vector<PointT> &points, const std::array<double, 2> &centroid)

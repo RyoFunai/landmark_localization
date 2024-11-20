@@ -17,6 +17,7 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>pointcloud_processor</depend>
   <depend>Eigen3</depend>
+  <depend>librealsense2</depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 

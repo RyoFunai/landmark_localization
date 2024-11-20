@@ -35,10 +35,25 @@ namespace landmark_localization
     load_parameters();
     pose_fuser_.setup(params_.laser_weight, params_.odom_weight_liner, params_.odom_weight_angler);
     ransac = std::make_unique<Ransac>(params_);
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    RCLCPP_INFO(this->get_logger(), "RealSenseの初期化を行います。");
+    cfg_.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_Z16, 30);
+    pipe_.start(cfg_);
+    rs2::pipeline_profile profile = pipe_.start(cfg_);
+    rs2_intrinsics intrinsics = profile.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
+    image_processing(intrinsics);
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  }
 
-    RCLCPP_INFO(this->get_logger(), "landmark_localization initialized");
-    RCLCPP_INFO(this->get_logger(), "params_.odom2laser_x: %f", params_.odom2laser_x);
-    RCLCPP_INFO(this->get_logger(), "params_.odom2laser_y: %f", params_.odom2laser_y);
+  void LandmarkLocalization::image_processing(rs2_intrinsics &intrinsics)
+  {
+    while (true)
+    {
+      rs2::frameset frames = pipe_.wait_for_frames();
+      rs2::depth_frame depth = frames.get_depth_frame();
+      std::vector<Point3D> point_cloud = depthToPoint3D(depth, intrinsics);
+      RCLCPP_INFO(this->get_logger(), "取得したポイント数: %zu", point_cloud.size());
+    }
   }
 
   void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -49,7 +64,6 @@ namespace landmark_localization
     auto start_process_pointcloud = std::chrono::high_resolution_clock::now();
     std::vector<Point3D> downsampled_points = processor.process_pointcloud(*msg);
     RCLCPP_INFO(this->get_logger(), "process_pointcloud took %ld ms", std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_process_pointcloud).count());
-
 
     // RANSAC を実行して平面を推定
     std::array<float, 4> plane_coefficients;
@@ -122,10 +136,61 @@ namespace landmark_localization
     RCLCPP_INFO(this->get_logger(), "localization time: %ld ms", duration);
   }
 
+  std::vector<Point3D> LandmarkLocalization::depthToPoint3D(rs2::depth_frame &depth, rs2_intrinsics &intrinsics)
+  {
+    std::vector<Point3D> points;
+    // 画像サイズを取得
+    int width = intrinsics.width;
+    int height = intrinsics.height;
+
+    // すべてのピクセルを走査
+    for (int y = 0; y < height; ++y)
+    {
+      for (int x = 0; x < width; ++x)
+      {
+        float depth_value = depth.get_distance(x, y);
+        if (depth_value > 0.0f)
+        {
+          // ピクセル座標をカメラ座標に変換
+          Point3D point;
+          point.x = (x - intrinsics.ppx) / intrinsics.fx * depth_value;
+          point.y = (y - intrinsics.ppy) / intrinsics.fy * depth_value;
+          point.z = depth_value;
+
+          points.emplace_back(point);
+        }
+      }
+    }
+
+    return points;
+  }
+
   void LandmarkLocalization::timer_callback()
   {
-    Vector3d marker_position = odom + est_diff_sum;
-    publish_marker(marker_position);
+    // rs2::frameset frames = pipe_.wait_for_frames();
+    // rs2::depth_frame depth = frames.get_depth_frame();
+    // rs2::pipeline_profile profile = pipe_.get_active_profile();
+
+    // // 深度データをPoint3Dのベクターに変換
+    // std::vector<Point3D> point_cloud = depthToPoint3D(depth, profile);
+
+    // RCLCPP_INFO(this->get_logger(), "取得したポイント数: %zu", point_cloud.size());
+
+    // // ここでpoint_cloudを既存の処理に渡す
+    // // 例: downsampled_points = process_pointcloud(point_cloud);
+    // // 現在のコードの流れに合わせて適切に統合してください
+
+    // // 既存の処理を呼び出す場合
+    // // process_pointcloud関数があると仮定して呼び出します
+    // PointCloudProcessor processor(params_);
+    // auto start = std::chrono::high_resolution_clock::now();
+    // RCLCPP_INFO(this->get_logger(), "");
+    // auto start_process_pointcloud = std::chrono::high_resolution_clock::now();
+    // std::vector<Point3D> downsampled_points = processor.process_pointcloud(point_cloud);
+    // RCLCPP_INFO(this->get_logger(), "process_pointcloud took %ld ms",
+    //             std::chrono::duration_cast<std::chrono::milliseconds>(
+    //                 std::chrono::high_resolution_clock::now() - start_process_pointcloud)
+    //                 .count());
   }
 
   void LandmarkLocalization::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
@@ -201,7 +266,6 @@ namespace landmark_localization
     params_.line_iterations = this->get_parameter("line_iterations").as_int();
     params_.odom2laser_x = this->get_parameter("odom2laser_x").as_double();
     params_.odom2laser_y = this->get_parameter("odom2laser_y").as_double();
-
   }
 
   void LandmarkLocalization::publish_downsampled_points(const std::vector<Point3D> &downsampled_points)
