@@ -16,7 +16,7 @@ namespace landmark_localization
       : rclcpp::Node("landmark_localization", name_space, options)
   {
     subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-        "/camera/camera/depth/color/points", 10,
+        "/livox/lidar", 10,
         std::bind(&LandmarkLocalization::pointcloud_callback, this, std::placeholders::_1));
     odom_subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/odom", 10,
@@ -47,9 +47,8 @@ namespace landmark_localization
     PointCloudProcessor processor(params_);
     RCLCPP_INFO(this->get_logger(), "");
     auto start_process_pointcloud = std::chrono::high_resolution_clock::now();
-    std::vector<Point3D> downsampled_points = processor.process_pointcloud(*msg);
+    std::vector<Point3D> downsampled_points = processor.PC2_to_vector(*msg);
     RCLCPP_INFO(this->get_logger(), "process_pointcloud took %ld ms", std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_process_pointcloud).count());
-
 
     // RANSAC を実行して平面を推定
     std::array<float, 4> plane_coefficients;
@@ -94,6 +93,8 @@ namespace landmark_localization
           LaserPoint laser_point = {pt.x, pt.y};
           global_points.push_back(laser_point);
         }
+        vt = sqrt(pow(diff_odom[0], 2) + pow(diff_odom[1], 2)) / duration;
+        wt = abs(diff_odom[2]) / duration;
         Vector3d estimated = pose_fuser_.fuse_pose(robot_position_vec, current_scan_odom, vt, wt, inliers_2d, rotated_inliers);
         Vector3d est_diff = estimated - current_scan_odom; // 直線からの推定値がデフォルト
         est_diff_sum += est_diff;
@@ -118,7 +119,7 @@ namespace landmark_localization
       }
     }
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     RCLCPP_INFO(this->get_logger(), "localization time: %ld ms", duration);
   }
 
@@ -133,8 +134,6 @@ namespace landmark_localization
     // オドメトリデータからx, y, yawを取得
     double x = msg->pose.pose.position.x;
     double y = msg->pose.pose.position.y;
-    vt = msg->twist.twist.linear.x;
-    wt = msg->twist.twist.angular.z;
 
     // クォータニオンからヨー角を計算
     tf2::Quaternion q(
@@ -201,7 +200,6 @@ namespace landmark_localization
     params_.line_iterations = this->get_parameter("line_iterations").as_int();
     params_.odom2laser_x = this->get_parameter("odom2laser_x").as_double();
     params_.odom2laser_y = this->get_parameter("odom2laser_y").as_double();
-
   }
 
   void LandmarkLocalization::publish_downsampled_points(const std::vector<Point3D> &downsampled_points)

@@ -69,6 +69,7 @@ namespace landmark_localization
     Vector3d est_diff_sum = Vector3d::Zero();
     bool first_time_ = true;
     const float distance_threshold = 0.02;
+    long duration = 0;
   };
 }
 #endif // LANDMARK_LOCALIZATION_HPP
