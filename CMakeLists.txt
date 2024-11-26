@@ -15,6 +15,8 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(pointcloud_processor REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(realsense2 REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED)
 
 set(dependencies
   ament_cmake
@@ -27,10 +29,13 @@ set(dependencies
   pointcloud_processor
   Eigen3
   realsense2
+  cv_bridge
+  OpenCV
 )
 
 include_directories(${PROJECT_NAME}
   ${EIGEN3_INCLUDE_DIR}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 add_library(${PROJECT_NAME} SHARED
@@ -52,10 +57,13 @@ ament_target_dependencies(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
+  ${OpenCV_INCLUDE_DIRS}
+  # ${realsense2_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME}
   ${realsense2_LIBRARY}
+  ${OpenCV_LIBRARIES}
 )
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

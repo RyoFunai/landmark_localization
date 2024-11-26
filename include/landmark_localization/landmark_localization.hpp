@@ -37,7 +37,7 @@ namespace landmark_localization
     void publish_marker(Vector3d &marker_position);
     void timer_callback();
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
-    void image_processing(rs2_intrinsics &intrinsics);
+    void image_processing(rs2_intrinsics &intrinsics, rs2::pipeline &pipe_);
     std::vector<Point3D> depthToPoint3D(rs2::depth_frame &depth, rs2_intrinsics &intrinsics);
     // RealSenseパイプライン
 
