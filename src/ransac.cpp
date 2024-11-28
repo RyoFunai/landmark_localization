@@ -22,7 +22,7 @@ double Ransac::arrange_angle(double &angle)
   else
     angle -= M_PI / 2;
 
-  return angle;
+  return -angle;
 }
 
 std::vector<LaserPoint> Ransac::rotate_points(std::vector<LaserPoint> &points, double angle)

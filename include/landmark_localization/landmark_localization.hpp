@@ -7,6 +7,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include "pointcloud_processor/types.hpp"
 #include <eigen3/Eigen/Dense>
 #include "landmark_localization/pose_fuser.hpp"
@@ -33,6 +34,7 @@ namespace landmark_localization
     void publish_detected_plane_marker(double width, double height);
     void publish_robot_markers(Vector3d &robot_position);
     void publish_marker(Vector3d &marker_position);
+    void publish_self_pose();
     void timer_callback();
 
     template <typename PointT>
@@ -55,6 +57,7 @@ namespace landmark_localization
     // ロボット位置用のパブリッシャーを追加
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr robot_marker_publisher_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_publisher_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
 
     Parameters params_;
@@ -67,7 +70,7 @@ namespace landmark_localization
     Vector3d odom = Vector3d::Zero();
     Vector3d last_odom = Vector3d::Zero();
     Vector3d est_diff_sum = Vector3d::Zero();
-    bool first_time_ = true;
+    bool first_detect_plane = false;
     const float distance_threshold = 0.02;
     long duration = 0;
   };
