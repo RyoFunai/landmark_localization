@@ -12,6 +12,7 @@
 #include <eigen3/Eigen/Dense>
 #include "landmark_localization/pose_fuser.hpp"
 #include "landmark_localization/ransac.hpp"
+#include <std_msgs/msg/empty.hpp>
 
 namespace landmark_localization
 {
@@ -33,6 +34,8 @@ namespace landmark_localization
     void publish_detected_plane_marker(double width, double height);
     geometry_msgs::msg::PoseStamped convert_to_pose_stamped(Vector3d &pose);
     void timer_callback();
+    void reset_self_position();
+    void restart_callback(const std_msgs::msg::Empty::SharedPtr msg);
 
     template <typename PointT>
     void translate_points(std::vector<PointT> &points, const std::array<double, 2> &centroid)
@@ -68,9 +71,10 @@ namespace landmark_localization
     Vector3d est_diff_sum = Vector3d::Zero();
     Vector3d robot_pose = Vector3d::Zero();
     Vector3d self_pose = Vector3d::Zero();
-        bool first_detect_plane = false;
+    bool first_detect_plane = false;
     const float distance_threshold = 0.02;
     long duration = 0;
+    rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr restart_subscription_;
   };
 }
 #endif // LANDMARK_LOCALIZATION_HPP

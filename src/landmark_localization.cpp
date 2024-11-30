@@ -7,6 +7,7 @@
 #include <random>
 #include <cmath>
 #include <chrono>
+#include <std_msgs/msg/empty.hpp>
 
 namespace landmark_localization
 {
@@ -30,6 +31,10 @@ namespace landmark_localization
     pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("self_pose", 10);
     laser_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("laser_pose", 10);
     timer_ = this->create_wall_timer(50ms, std::bind(&LandmarkLocalization::timer_callback, this));
+
+    restart_subscription_ = this->create_subscription<std_msgs::msg::Empty>(
+        "/restart", 10,
+        std::bind(&LandmarkLocalization::restart_callback, this, std::placeholders::_1));
 
     load_parameters();
     pose_fuser_.setup(params_.laser_weight, params_.odom_weight_liner, params_.odom_weight_angler);
@@ -330,6 +335,27 @@ namespace landmark_localization
 
     // 平面マーカーをパブリッシュ
     detected_plane_marker_publisher_->publish(plane_marker);
+  }
+
+  void LandmarkLocalization::reset_self_position()
+  {
+    vt = 0.0;
+    wt = 0.0;
+    diff_odom = Vector3d::Zero();
+    last_odom = Vector3d::Zero();
+    est_diff_sum = Vector3d::Zero();
+    odom = Vector3d::Zero();
+    robot_pose = Vector3d::Zero();
+    self_pose = Vector3d::Zero();
+    first_detect_plane = false;
+
+    RCLCPP_INFO(this->get_logger(), "自己位置推定がリセットされました。");
+  }
+
+  void LandmarkLocalization::restart_callback(const std_msgs::msg::Empty::SharedPtr msg)
+  {
+    RCLCPP_INFO(this->get_logger(), "/restart メッセージを受信しました。自己位置推定をリセットします。");
+    reset_self_position();
   }
 }
 
