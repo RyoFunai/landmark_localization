@@ -46,7 +46,14 @@ namespace landmark_localization
     auto start = std::chrono::high_resolution_clock::now();
     PointCloudProcessor processor(params_);
     std::vector<Point3D> tmp_points = processor.PC2_to_vector(*msg);
-    std::vector<Point3D> downsampled_points = processor.filter_points_origin(params_.min_x, params_.min_y, tmp_points);
+    std::vector<Point3D> downsampled_points;
+    if (!first_detect_plane)
+    {
+      downsampled_points = processor.filter_points_pre(tmp_points);
+    }
+    else{
+      downsampled_points = processor.filter_points_base_origin(self_pose[0], self_pose[1], self_pose[2], tmp_points);
+    }
     publish_downsampled_points(downsampled_points);
 
     // RANSAC を実行して平面を推定
@@ -127,7 +134,7 @@ namespace landmark_localization
     robot_pose[0] = est_diff_sum[0] - params_.odom2laser_x * std::cos(est_diff_sum[2]) - params_.odom2laser_y * std::sin(est_diff_sum[2]); // laserの位置が求まったので、odomの位置に変換
     robot_pose[1] = est_diff_sum[1] - params_.odom2laser_x * std::sin(est_diff_sum[2]) + params_.odom2laser_y * std::cos(est_diff_sum[2]);
     robot_pose[2] = est_diff_sum[2];
-    Vector3d self_pose = odom + robot_pose;
+    self_pose = odom + robot_pose;
     publish_self_pose(self_pose);
     Vector3d laser_pose = odom + est_diff_sum;
     publish_laser_pose(laser_pose);

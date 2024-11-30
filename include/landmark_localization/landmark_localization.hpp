@@ -70,8 +70,8 @@ namespace landmark_localization
     Vector3d last_odom = Vector3d::Zero();
     Vector3d est_diff_sum = Vector3d::Zero();
     Vector3d robot_pose = Vector3d::Zero();
-
-        bool first_detect_plane = false;
+    Vector3d self_pose = Vector3d::Zero();
+    bool first_detect_plane = false;
     const float distance_threshold = 0.02;
     long duration = 0;
   };

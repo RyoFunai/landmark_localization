@@ -249,10 +249,10 @@ bool Ransac::check_plane_size(const std::vector<Point3D> &plane_inliers, const s
   // サイズチェック
   if (width < min_width || width > max_width || height < min_height || height > max_height)
   {
-    RCLCPP_INFO(rclcpp::get_logger("ransac"), "max_z: %f, min_z: %f", max_z, min_z);
-    RCLCPP_INFO(rclcpp::get_logger("ransac"), "max_y: %f, min_y: %f", max_y, min_y);
-    RCLCPP_ERROR(rclcpp::get_logger("ransac"), "width: %f, height: %f", width, height);
-    RCLCPP_WARN(rclcpp::get_logger("ransac"), "検出した面のサイズが規定範囲外です。スキップします。");
+    // RCLCPP_INFO(rclcpp::get_logger("ransac"), "max_z: %f, min_z: %f", max_z, min_z);
+    // RCLCPP_INFO(rclcpp::get_logger("ransac"), "max_y: %f, min_y: %f", max_y, min_y);
+    // RCLCPP_ERROR(rclcpp::get_logger("ransac"), "width: %f, height: %f", width, height);
+    // RCLCPP_WARN(rclcpp::get_logger("ransac"), "検出した面のサイズが規定範囲外です。スキップします。");
     return false;
   }
   return true;
