@@ -31,9 +31,7 @@ namespace landmark_localization
     void publish_inliers(const std::vector<Point3D> &inliers);
     void publish_plane_marker(const std::array<float, 4> &plane_coefficients);
     void publish_detected_plane_marker(double width, double height);
-    void publish_laser_pose(Vector3d &robot_position);
-    void publish_marker(Vector3d &marker_position);
-    void publish_self_pose(Vector3d &self_pose);
+    geometry_msgs::msg::PoseStamped convert_to_pose_stamped(Vector3d &pose);
     void timer_callback();
 
     template <typename PointT>
@@ -54,9 +52,8 @@ namespace landmark_localization
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr inliers_publisher_;
 
     // ロボット位置用のパブリッシャーを追加
-    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr robot_marker_publisher_;
-    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_publisher_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_publisher_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr laser_pose_publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
 
     Parameters params_;
@@ -71,7 +68,7 @@ namespace landmark_localization
     Vector3d est_diff_sum = Vector3d::Zero();
     Vector3d robot_pose = Vector3d::Zero();
     Vector3d self_pose = Vector3d::Zero();
-    bool first_detect_plane = false;
+        bool first_detect_plane = false;
     const float distance_threshold = 0.02;
     long duration = 0;
   };

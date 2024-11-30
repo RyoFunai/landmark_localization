@@ -28,11 +28,8 @@ namespace landmark_localization
     detected_plane_marker_publisher_ = this->create_publisher<visualization_msgs::msg::Marker>("detected_plane_marker", 10);
     inliers_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("inlier_points", 10);
     pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("self_pose", 10);
+    laser_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("laser_pose", 10);
     timer_ = this->create_wall_timer(50ms, std::bind(&LandmarkLocalization::timer_callback, this));
-
-    // ロボット位置用のパブリッシャーを初期化
-    robot_marker_publisher_ = this->create_publisher<visualization_msgs::msg::Marker>("laser_pose", 10);
-    marker_publisher_ = this->create_publisher<visualization_msgs::msg::Marker>("hoge", 10);
 
     load_parameters();
     pose_fuser_.setup(params_.laser_weight, params_.odom_weight_liner, params_.odom_weight_angler);
@@ -135,30 +132,31 @@ namespace landmark_localization
     robot_pose[1] = est_diff_sum[1] - params_.odom2laser_x * std::sin(est_diff_sum[2]) + params_.odom2laser_y * std::cos(est_diff_sum[2]);
     robot_pose[2] = est_diff_sum[2];
     self_pose = odom + robot_pose;
-    publish_self_pose(self_pose);
     Vector3d laser_pose = odom + est_diff_sum;
-    publish_laser_pose(laser_pose);
+    geometry_msgs::msg::PoseStamped pose_msg = convert_to_pose_stamped(self_pose);
+    geometry_msgs::msg::PoseStamped laser_pose_msg = convert_to_pose_stamped(laser_pose);
+    pose_publisher_->publish(pose_msg);
+    laser_pose_publisher_->publish(laser_pose_msg);
   }
 
-  void LandmarkLocalization::publish_self_pose(Vector3d &self_pose)
+  geometry_msgs::msg::PoseStamped LandmarkLocalization::convert_to_pose_stamped(Vector3d &pose)
   {
     // PoseStampedメッセージの作成と公開
     geometry_msgs::msg::PoseStamped pose_msg;
     pose_msg.header.stamp = this->get_clock()->now();
     pose_msg.header.frame_id = "map";
 
-    pose_msg.pose.position.x = self_pose[0];
-    pose_msg.pose.position.y = self_pose[1];
+    pose_msg.pose.position.x = pose[0];
+    pose_msg.pose.position.y = pose[1];
     pose_msg.pose.position.z = 0.0;
 
     tf2::Quaternion q;
-    q.setRPY(0, 0, self_pose[2]);
+    q.setRPY(0, 0, pose[2]);
     pose_msg.pose.orientation.x = q.x();
     pose_msg.pose.orientation.y = q.y();
     pose_msg.pose.orientation.z = q.z();
     pose_msg.pose.orientation.w = q.w();
-
-    pose_publisher_->publish(pose_msg);
+    return pose_msg;
   }
 
   void LandmarkLocalization::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
@@ -332,122 +330,6 @@ namespace landmark_localization
 
     // 平面マーカーをパブリッシュ
     detected_plane_marker_publisher_->publish(plane_marker);
-  }
-
-  void LandmarkLocalization::publish_laser_pose(Vector3d &robot_position)
-  {
-    // ロボットの位置マーカー（球体）
-    visualization_msgs::msg::Marker robot_marker;
-    robot_marker.header.frame_id = "map";
-    robot_marker.ns = "robot";
-    robot_marker.id = 1;
-    robot_marker.type = visualization_msgs::msg::Marker::SPHERE;
-    robot_marker.action = visualization_msgs::msg::Marker::ADD;
-
-    // ロボットのサイズを設定（例: 0.2m の球体）
-    robot_marker.scale.x = 0.2;
-    robot_marker.scale.y = 0.2;
-    robot_marker.scale.z = 0.2;
-
-    // ロボットの位置を設定
-    geometry_msgs::msg::Point position;
-    position.x = robot_position[0];
-    position.y = robot_position[1];
-    robot_marker.pose.position = position;
-
-    // Yaw角を調整してロボットの向きを設定
-    // 平面がロボットに向かっている時にYaw角が0度になるように調整
-
-    // クォータニオンをYaw角から計算
-    geometry_msgs::msg::Quaternion orientation;
-    orientation.x = 0.0;
-    orientation.y = 0.0;
-    orientation.z = sin(robot_position[2] / 2.0);
-    orientation.w = cos(robot_position[2] / 2.0);
-    robot_marker.pose.orientation = orientation;
-
-    // 色と透過性を設定（例: 青色、透明度 1.0）
-    robot_marker.color.r = 0.0f;
-    robot_marker.color.g = 0.0f;
-    robot_marker.color.b = 1.0f;
-    robot_marker.color.a = 1.0f;
-
-    // ロボットマーカーをパブリッシュ
-    robot_marker_publisher_->publish(robot_marker);
-
-    // ロボットの向きを示すベクトルマーカーを作成
-    visualization_msgs::msg::Marker robot_vector;
-    robot_vector.header.frame_id = "map";
-    robot_vector.ns = "robot_vector";
-    robot_vector.id = 2;
-    robot_vector.type = visualization_msgs::msg::Marker::ARROW;
-    robot_vector.action = visualization_msgs::msg::Marker::ADD;
-
-    // 矢印の開始点をロボットの位置に設定
-    geometry_msgs::msg::Point start_point;
-    start_point.x = robot_position[0];
-    start_point.y = robot_position[1];
-    start_point.z = 0.0;
-
-    // 矢印の終了点を調整したYaw角に基づいて設定
-    double arrow_length = 0.5; // 矢印の長さを0.5mに設定
-    geometry_msgs::msg::Point end_point;
-    end_point.x = robot_position[0] + arrow_length * std::cos(robot_position[2]);
-    end_point.y = robot_position[1] + arrow_length * std::sin(robot_position[2]);
-    end_point.z = 0.0;
-
-    robot_vector.points.push_back(start_point);
-    robot_vector.points.push_back(end_point);
-
-    // 矢印のサイズを設定
-    robot_vector.scale.x = 0.05; // 矢印の径
-    robot_vector.scale.y = 0.1;  // 矢じりの幅
-    robot_vector.scale.z = 0.1;  // 矢じりの高さ
-
-    // 矢印の色と透明度を設定（例: 赤色、透明度 1.0）
-    robot_vector.color.r = 1.0f;
-    robot_vector.color.g = 0.0f;
-    robot_vector.color.b = 0.0f;
-    robot_vector.color.a = 1.0f;
-
-    // 矢印マーカーをパブリッシュ
-    robot_marker_publisher_->publish(robot_vector);
-  }
-
-  void LandmarkLocalization::publish_marker(Vector3d &marker_position)
-  {
-    visualization_msgs::msg::Marker marker;
-
-    // マーカーの基本設定
-    marker.header.frame_id = "map";
-    marker.header.stamp = this->get_clock()->now();
-    marker.ns = "laser_estimated";
-    marker.id = 0;
-    marker.type = visualization_msgs::msg::Marker::SPHERE;
-    marker.action = visualization_msgs::msg::Marker::ADD;
-    marker.pose.position.x = marker_position[0];
-    marker.pose.position.y = marker_position[1];
-    marker.pose.position.z = 0.0;
-
-    // クォータニオンの設定
-    tf2::Quaternion q;
-    q.setRPY(0, 0, marker_position[2]);
-    marker.pose.orientation.x = q.x();
-    marker.pose.orientation.y = q.y();
-    marker.pose.orientation.z = q.z();
-    marker.pose.orientation.w = q.w();
-
-    // サイズとカラーの設定
-    marker.scale.x = 0.2;
-    marker.scale.y = 0.2;
-    marker.scale.z = 0.2;
-    marker.color.a = 1.0; // 不透明
-    marker.color.r = 1.0;
-    marker.color.g = 0.0;
-    marker.color.b = 0.0;
-
-    // マーカーをパブリッシュ
-    marker_publisher_->publish(marker);
   }
 }
 
