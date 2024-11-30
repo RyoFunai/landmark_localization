@@ -12,7 +12,6 @@
 #include <eigen3/Eigen/Dense>
 #include "landmark_localization/pose_fuser.hpp"
 #include "landmark_localization/ransac.hpp"
-#include "landmark_localization/visibility.h"
 
 namespace landmark_localization
 {
@@ -32,9 +31,9 @@ namespace landmark_localization
     void publish_inliers(const std::vector<Point3D> &inliers);
     void publish_plane_marker(const std::array<float, 4> &plane_coefficients);
     void publish_detected_plane_marker(double width, double height);
-    void publish_robot_markers(Vector3d &robot_position);
+    void publish_laser_pose(Vector3d &robot_position);
     void publish_marker(Vector3d &marker_position);
-    void publish_self_pose();
+    void publish_self_pose(Vector3d &self_pose);
     void timer_callback();
 
     template <typename PointT>
@@ -70,7 +69,9 @@ namespace landmark_localization
     Vector3d odom = Vector3d::Zero();
     Vector3d last_odom = Vector3d::Zero();
     Vector3d est_diff_sum = Vector3d::Zero();
-    bool first_detect_plane = false;
+    Vector3d robot_pose = Vector3d::Zero();
+
+        bool first_detect_plane = false;
     const float distance_threshold = 0.02;
     long duration = 0;
   };
