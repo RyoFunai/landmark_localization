@@ -43,25 +43,48 @@ namespace landmark_localization
     RCLCPP_INFO(this->get_logger(), "landmark_localization initialized");
   }
 
+  void LandmarkLocalization::load_parameters()
+  {
+    params_.min_x = this->get_parameter("min_x").as_double();
+    params_.max_x = this->get_parameter("max_x").as_double();
+    params_.min_y = this->get_parameter("min_y").as_double();
+    params_.max_y = this->get_parameter("max_y").as_double();
+    params_.min_z = this->get_parameter("min_z").as_double();
+    params_.max_z = this->get_parameter("max_z").as_double();
+    livox_pitch_ = this->get_parameter("livox_pitch").as_double();
+    params_.landmark_width = this->get_parameter("landmark_width").as_double();
+    params_.landmark_height = this->get_parameter("landmark_height").as_double();
+    params_.laser_weight = this->get_parameter("laser_weight").as_double();
+    params_.odom_weight_liner = this->get_parameter("odom_weight_liner").as_double();
+    params_.odom_weight_angler = this->get_parameter("odom_weight_angler").as_double();
+    params_.width_tolerance = this->get_parameter("width_tolerance").as_double();
+    params_.height_tolerance = this->get_parameter("height_tolerance").as_double();
+    params_.plane_iterations = this->get_parameter("plane_iterations").as_int();
+    params_.line_iterations = this->get_parameter("line_iterations").as_int();
+    params_.odom2laser_x = this->get_parameter("odom2laser_x").as_double();
+    params_.odom2laser_y = this->get_parameter("odom2laser_y").as_double();
+  }
+
   void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
     auto start = std::chrono::high_resolution_clock::now();
     PointCloudProcessor processor(params_);
     std::vector<Point3D> tmp_points = processor.PC2_to_vector(*msg);
-    std::vector<Point3D> downsampled_points;
+    std::vector<Point3D> points;
     if (!first_detect_plane)
     {
-      downsampled_points = processor.filter_points_pre(tmp_points);
+      points = processor.filter_points_pre(tmp_points);
     }
     else{
-      downsampled_points = processor.filter_points_base_origin(self_pose[0], self_pose[1], self_pose[2], tmp_points);
+      points = processor.filter_points_base_origin(self_pose[0], self_pose[1], self_pose[2], tmp_points);
     }
-    publish_downsampled_points(downsampled_points);
+    std::vector<Point3D> rotated_points = processor.rotate_pitch(points, livox_pitch_);
+    publish_downsampled_points(rotated_points);
 
     // RANSAC を実行して平面を推定
     std::array<float, 4> plane_coefficients;
     std::vector<Point3D> plane_inliers;
-    if (ransac->perform_ransac(downsampled_points, plane_coefficients, plane_inliers))
+    if (ransac->perform_ransac(rotated_points, plane_coefficients, plane_inliers))
     {
       std::vector<LaserPoint> inliers_2d;
       for (auto pt : plane_inliers)
@@ -188,53 +211,6 @@ namespace landmark_localization
     last_odom[0] = x;
     last_odom[1] = y;
     last_odom[2] = yaw;
-  }
-
-  void LandmarkLocalization::load_parameters()
-  {
-    // this->declare_parameter("min_x", -10.0);
-    // this->declare_parameter("max_x", 10.0);
-    // this->declare_parameter("min_y", -10.0);
-    // this->declare_parameter("max_y", 10.0);
-    // this->declare_parameter("min_z", -2.0);
-    // this->declare_parameter("max_z", 5.0);
-    // this->declare_parameter("D_voxel_size_x", 0.1);
-    // this->declare_parameter("D_voxel_size_y", 0.1);
-    // this->declare_parameter("D_voxel_size_z", 0.1);
-
-    // this->declare_parameter("landmark_width", 0.9);
-    // this->declare_parameter("landmark_height", 0.91);
-    // this->declare_parameter("width_tolerance", 0.1);
-    // this->declare_parameter("height_tolerance", 0.4);
-    // this->declare_parameter("laser_weight", 1.0);
-    // this->declare_parameter("odom_weight_liner", 1.0e-2);
-    // this->declare_parameter("odom_weight_angler", 1.0e-2);
-    // this->declare_parameter("plane_iterations", 100);
-    // this->declare_parameter("line_iterations", 100);
-    // this->declare_parameter("odom2laser_x", 0.0);
-    // this->declare_parameter("odom2laser_y", 0.0);
-
-    params_.min_x = this->get_parameter("min_x").as_double();
-    params_.max_x = this->get_parameter("max_x").as_double();
-    params_.min_y = this->get_parameter("min_y").as_double();
-    params_.max_y = this->get_parameter("max_y").as_double();
-    params_.min_z = this->get_parameter("min_z").as_double();
-    params_.max_z = this->get_parameter("max_z").as_double();
-    params_.D_voxel_size_x = this->get_parameter("D_voxel_size_x").as_double();
-    params_.D_voxel_size_y = this->get_parameter("D_voxel_size_y").as_double();
-    params_.D_voxel_size_z = this->get_parameter("D_voxel_size_z").as_double();
-
-    params_.landmark_width = this->get_parameter("landmark_width").as_double();
-    params_.landmark_height = this->get_parameter("landmark_height").as_double();
-    params_.laser_weight = this->get_parameter("laser_weight").as_double();
-    params_.odom_weight_liner = this->get_parameter("odom_weight_liner").as_double();
-    params_.odom_weight_angler = this->get_parameter("odom_weight_angler").as_double();
-    params_.width_tolerance = this->get_parameter("width_tolerance").as_double();
-    params_.height_tolerance = this->get_parameter("height_tolerance").as_double();
-    params_.plane_iterations = this->get_parameter("plane_iterations").as_int();
-    params_.line_iterations = this->get_parameter("line_iterations").as_int();
-    params_.odom2laser_x = this->get_parameter("odom2laser_x").as_double();
-    params_.odom2laser_y = this->get_parameter("odom2laser_y").as_double();
   }
 
   void LandmarkLocalization::publish_downsampled_points(const std::vector<Point3D> &downsampled_points)

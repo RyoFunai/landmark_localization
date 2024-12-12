@@ -75,6 +75,7 @@ namespace landmark_localization
     const float distance_threshold = 0.02;
     long duration = 0;
     rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr restart_subscription_;
+    double livox_pitch_ = 0.0;
   };
 }
 #endif // LANDMARK_LOCALIZATION_HPP
