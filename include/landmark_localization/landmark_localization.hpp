@@ -27,6 +27,7 @@ namespace landmark_localization
   private:
     void pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void load_parameters();
+    double calculate_y_center(const std::vector<LaserPoint> &points);
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
     void publish_downsampled_points(const std::vector<Point3D> &downsampled_points);
     void publish_inliers(const std::vector<Point3D> &inliers);
@@ -76,6 +77,7 @@ namespace landmark_localization
     long duration = 0;
     rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr restart_subscription_;
     double livox_pitch_ = 0.0;
+    bool use_y_median_ = true;
   };
 }
 #endif // LANDMARK_LOCALIZATION_HPP

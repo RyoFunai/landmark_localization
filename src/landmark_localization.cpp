@@ -63,6 +63,7 @@ namespace landmark_localization
     params_.line_iterations = this->get_parameter("line_iterations").as_int();
     params_.odom2laser_x = this->get_parameter("odom2laser_x").as_double();
     params_.odom2laser_y = this->get_parameter("odom2laser_y").as_double();
+    use_y_median_ = this->get_parameter("use_y_median").as_bool();
   }
 
   void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -75,7 +76,8 @@ namespace landmark_localization
     {
       points = processor.filter_points_pre(tmp_points);
     }
-    else{
+    else
+    {
       points = processor.filter_points_base_origin(self_pose[0], self_pose[1], self_pose[2], tmp_points);
     }
     std::vector<Point3D> rotated_points = processor.rotate_pitch(points, livox_pitch_);
@@ -104,7 +106,7 @@ namespace landmark_localization
           return;
         // インライア点群の重心を計算
         std::array<double, 2> centroid = ransac->calculate_centroid(inliers_2d);
-
+        if (!use_y_median_) centroid[1] = calculate_y_center(inliers_2d);
         // インライア点群を重心で圧縮（原点に移動）
         translate_points<LaserPoint>(inliers_2d, centroid);
         translate_points<LaserPoint>(rotated_inliers, centroid);
@@ -152,6 +154,30 @@ namespace landmark_localization
     }
     duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count();
     // RCLCPP_INFO(this->get_logger(), "localization time: %ld ms", std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count());
+  }
+
+  double LandmarkLocalization::calculate_y_center(const std::vector<LaserPoint> &points)
+  {
+    if (points.empty())
+    {
+      return 0.0;
+    }
+
+    double min_y = std::numeric_limits<double>::max();
+    double max_y = std::numeric_limits<double>::lowest();
+
+    for (const auto &pt : points)
+    {
+      if (pt.y < min_y)
+      {
+        min_y = pt.y;
+      }
+      if (pt.y > max_y)
+      {
+        max_y = pt.y;
+      }
+    }
+    return (min_y + max_y) / 2.0;
   }
 
   void LandmarkLocalization::timer_callback()
