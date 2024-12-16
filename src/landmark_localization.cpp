@@ -68,6 +68,7 @@ namespace landmark_localization
 
   void LandmarkLocalization::pointcloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
+    return;
     auto start = std::chrono::high_resolution_clock::now();
     PointCloudProcessor processor(params_);
     std::vector<Point3D> tmp_points = processor.PC2_to_vector(*msg);
@@ -182,12 +183,21 @@ namespace landmark_localization
 
   void LandmarkLocalization::timer_callback()
   {
-    robot_pose[0] = est_diff_sum[0] - params_.odom2laser_x * std::cos(est_diff_sum[2]) - params_.odom2laser_y * std::sin(est_diff_sum[2]); // laserの位置が求まったので、odomの位置に変換
-    robot_pose[1] = est_diff_sum[1] - params_.odom2laser_x * std::sin(est_diff_sum[2]) + params_.odom2laser_y * std::cos(est_diff_sum[2]);
-    robot_pose[2] = est_diff_sum[2];
-    self_pose = odom + robot_pose;
-    Vector3d laser_pose = odom + est_diff_sum;
-    geometry_msgs::msg::PoseStamped pose_msg = convert_to_pose_stamped(self_pose);
+    // robot_pose[0] = est_diff_sum[0] - params_.odom2laser_x * std::cos(est_diff_sum[2]) - params_.odom2laser_y * std::sin(est_diff_sum[2]); // laserの位置が求まったので、odomの位置に変換
+    // robot_pose[1] = est_diff_sum[1] - params_.odom2laser_x * std::sin(est_diff_sum[2]) + params_.odom2laser_y * std::cos(est_diff_sum[2]);
+    // robot_pose[2] = est_diff_sum[2];
+    // self_pose = odom + robot_pose;
+    // Vector3d laser_pose = odom + est_diff_sum;
+    // geometry_msgs::msg::PoseStamped pose_msg = convert_to_pose_stamped(self_pose);
+    // geometry_msgs::msg::PoseStamped laser_pose_msg = convert_to_pose_stamped(laser_pose);
+    // pose_publisher_->publish(pose_msg);
+    // laser_pose_publisher_->publish(laser_pose_msg);
+
+    Vector3d laser_pose;
+    laser_pose[0] = odom[0] + params_.odom2laser_x * std::cos(odom[2]) - params_.odom2laser_y * std::sin(odom[2]);
+    laser_pose[1] = odom[1] + params_.odom2laser_x * std::sin(odom[2]) + params_.odom2laser_y * std::cos(odom[2]);
+    laser_pose[2] = odom[2];
+    geometry_msgs::msg::PoseStamped pose_msg = convert_to_pose_stamped(odom);
     geometry_msgs::msg::PoseStamped laser_pose_msg = convert_to_pose_stamped(laser_pose);
     pose_publisher_->publish(pose_msg);
     laser_pose_publisher_->publish(laser_pose_msg);
